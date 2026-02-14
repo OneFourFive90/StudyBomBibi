@@ -24,7 +24,7 @@ export default function TestPage() {
       } else {
         setReply('Error: ' + data.error);
       }
-    } catch (error) {
+    } catch{
       setReply('Failed to contact server.');
     }
     setLoading(false);

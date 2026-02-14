@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     // 3. Return the result
     return NextResponse.json({ result: aiResponse });
 
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 }
