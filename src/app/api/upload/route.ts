@@ -15,8 +15,10 @@ const ALLOWED_TYPES = [
 ];
 
 export async function POST(req: Request) {
+  let tempFilePath: string | null = null;
+
   try {
-    // 1. Parse the incoming form data
+    // Parse the incoming form data
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
@@ -31,47 +33,96 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Convert file to buffer and save to a temporary location
+    // Save temp file
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    // Create a temp path (works on Vercel and Localhost)
-    const tempFilePath = path.join(os.tmpdir(), file.name);
+    const sanitizedName = file.name.replace(/\s+/g, "_");
+    tempFilePath = path.join(os.tmpdir(), sanitizedName);
     await writeFile(tempFilePath, buffer);
-    console.log(`Saved temp file to: ${tempFilePath}`);
 
-    // 3. Upload to Gemini
-    const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+    // Upload to Gemini
+    const uploadedFile = await fileManager.uploadFile(tempFilePath, {
       mimeType: file.type,
-      displayName: file.name,
+      displayName: sanitizedName,
     });
 
-    console.log(`Uploaded to Gemini: ${uploadResponse.file.uri}`);
+    //Polling Loop
+    let fileStatus = await fileManager.getFile(uploadedFile.file.name);
+    let attempts = 0;
+    const maxAttempts = 30; // 60 seconds max
+    while (fileStatus.state === "PROCESSING" && attempts < maxAttempts) {
+      console.log("Waiting for file to process...");
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2s
+      fileStatus = await fileManager.getFile(uploadedFile.file.name);
+      attempts++;
+    }
 
-    // 4. Verification: Ask Gemini to summarize it immediately
+    if (fileStatus.state === "FAILED") {
+      throw new Error("Gemini failed to process this file.");
+    }
+
+    if (fileStatus.state === "PROCESSING") {
+      throw new Error("File processing timeout. Please try again.");
+    }
+
+    // DEFINE SMART PROMPTS
+    let aiInstruction = "";
+
+    if (file.type.startsWith("image/")) {
+      // IMAGE / HANDWRITING LOGIC
+      aiInstruction = `
+    Analyze this image. 
+    1. If it is a diagram or chart, describe the components and relationships in detail.
+    2. If it contains handwriting, transcribe it into digital text and correct obvious spelling errors.
+    3. If it is a slide, transcribe the text and describe any visuals.
+    Output the result in clean Markdown.
+  `;
+    } else if (file.type === "application/pdf") {
+      // PDF / SLIDE LOGIC
+      aiInstruction = `
+    Read this document and extract all text.
+    - Ignore headers, footers, page numbers, and references.
+    - Format the output as clean, readable Markdown.
+    - If there are images/diagrams within the PDF, describe them briefly in [brackets].
+  `;
+    } else {
+      // TEXT / CSV LOGIC
+      aiInstruction = "Analyze this text and format it as clean Markdown.";
+    }
+
+    // Generate content
     const result = await reasoningModel.generateContent([
       {
         fileData: {
-          mimeType: uploadResponse.file.mimeType,
-          fileUri: uploadResponse.file.uri,
+          mimeType: fileStatus.mimeType,
+          fileUri: fileStatus.uri,
         },
       },
-      //prompt
-      { text: "Summarize this document in 3 bullet points." },
+      { text: aiInstruction },
     ]);
 
-    // 5. Cleanup: Delete the temp file to save space
-    await unlink(tempFilePath);
+    const responseText = result.response.text();
+    if (!responseText) {
+      throw new Error("Empty response from AI model.");
+    }
 
-    // 6. Return the AI's summary and the File URI
     return NextResponse.json({
       success: true,
-      fileUri: uploadResponse.file.uri,
-      summary: result.response.text(),
+      fileUri: fileStatus.uri,
+      summary: responseText,
     });
 
   } catch (error) {
     console.error("Upload Error:", error);
     return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
+  } finally {
+    // Cleanup temp file
+    if (tempFilePath) {
+      try {
+        await unlink(tempFilePath);
+      } catch (e) {
+        console.warn("Failed to delete temp file:", e);
+      }
+    }
   }
 }
