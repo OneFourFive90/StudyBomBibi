@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error) {
-    console.error("Ingestion Error:", error);
+    console.error("Upload Error:", error);
     return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
   }
 }
