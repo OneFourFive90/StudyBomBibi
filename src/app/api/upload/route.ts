@@ -4,6 +4,16 @@ import { writeFile, unlink } from "fs/promises";
 import path from "path";
 import os from "os";
 
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+];
+
 export async function POST(req: Request) {
   try {
     // 1. Parse the incoming form data
@@ -14,10 +24,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return NextResponse.json(
+        { error: `File type ${file.type} is not supported.` },
+        { status: 400 }
+      );
+    }
+
     // 2. Convert file to buffer and save to a temporary location
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    
+
     // Create a temp path (works on Vercel and Localhost)
     const tempFilePath = path.join(os.tmpdir(), file.name);
     await writeFile(tempFilePath, buffer);
@@ -28,7 +45,7 @@ export async function POST(req: Request) {
       mimeType: file.type,
       displayName: file.name,
     });
-    
+
     console.log(`Uploaded to Gemini: ${uploadResponse.file.uri}`);
 
     // 4. Verification: Ask Gemini to summarize it immediately
@@ -46,7 +63,7 @@ export async function POST(req: Request) {
     // 5. Cleanup: Delete the temp file to save space
     await unlink(tempFilePath);
 
-    // 6. Return the AI's summary and the File URI (You'll save this URI to Firebase later)
+    // 6. Return the AI's summary and the File URI
     return NextResponse.json({
       success: true,
       fileUri: uploadResponse.file.uri,
