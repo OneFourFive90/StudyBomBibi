@@ -5,6 +5,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  signInWithPopup,
+  GoogleAuthProvider,
   User,
   UserCredential,
 } from 'firebase/auth';
@@ -33,6 +35,29 @@ export async function signUp(email: string, password: string): Promise<UserCrede
  */
 export async function signIn(email: string, password: string): Promise<UserCredential> {
   return signInWithEmailAndPassword(auth, email, password);
+}
+
+/**
+ * Sign in with Google (popup)
+ */
+export async function signInWithGoogle(): Promise<UserCredential> {
+  const provider = new GoogleAuthProvider();
+  const userCredential = await signInWithPopup(auth, provider);
+
+  // If this is a new user, create a Firestore profile
+  try {
+    // additionalUserInfo may be undefined, guard it
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyCred = userCredential as any;
+    if (anyCred?.additionalUserInfo?.isNewUser) {
+      const email = userCredential.user.email ?? '';
+      await createUserProfile(userCredential.user.uid, email);
+    }
+  } catch (err) {
+    console.error('Failed to create Firestore profile for Google sign-in:', err);
+  }
+
+  return userCredential;
 }
 
 /**

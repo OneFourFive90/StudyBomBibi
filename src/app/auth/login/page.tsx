@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { signIn } from '@/lib/firebase/auth';
+import { signIn, signInWithGoogle } from '@/lib/firebase/auth';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
@@ -33,6 +33,20 @@ export default function LoginPage() {
       } else {
         setError('Failed to sign in. Please try again.');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await signInWithGoogle();
+      router.push('/dashboard');
+    } catch (err) {
+      if (err instanceof Error) setError(err.message);
+      else setError('Google sign-in failed');
     } finally {
       setLoading(false);
     }
@@ -90,6 +104,15 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={loading}
+          className="w-full mt-3 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+        >
+          {loading ? 'Signing in...' : 'Sign in with Google'}
+        </button>
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400 mt-4">
           Don`&#39`t have an account?{' '}
