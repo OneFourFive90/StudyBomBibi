@@ -7,6 +7,7 @@ import os from "os";
 const ALLOWED_TYPES = [
   "application/pdf",
   "image/jpeg",
+  "image/jpg",
   "image/png",
   "image/webp",
   "text/plain",
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       fileUri: fileStatus.uri,
-      summary: responseText,
+      extractText: responseText,
     });
 
   } catch (error) {
