@@ -4,7 +4,7 @@ Read files feature should be:
 - Get files by MIME type category (PDFs, images, text)
 - UI can view the file by accessing to the downloadURL stored in Firestore metadata, instead of fetching from Storage directly
 */
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export interface FirestoreFile {
@@ -40,6 +40,28 @@ export async function getUserFiles(userId: string): Promise<FirestoreFile[]> {
   } catch (error) {
     console.error('Error fetching user files:', error);
     throw new Error('Failed to fetch files');
+  }
+}
+
+/**
+ * Get a specific file by its ID
+ */
+export async function getFileById(fileId: string): Promise<FirestoreFile | null> {
+  try {
+    const fileRef = doc(db, 'files', fileId);
+    const fileSnap = await getDoc(fileRef);
+    
+    if (fileSnap.exists()) {
+      return {
+        id: fileSnap.id,
+        ...fileSnap.data()
+      } as FirestoreFile;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error fetching file by ID:', error);
+    throw new Error('Failed to fetch file');
   }
 }
 
