@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { useAuth } from '@/context/AuthContext';
+import { logout } from '@/lib/firebase/auth';
 import {
   getUserFilesByType,
   getUserStorageStatsFromFirestore,
@@ -12,11 +15,13 @@ import { deleteFile } from '@/lib/firebase/userFileManagement/deleteFile';
 import { uploadFile } from '@/lib/firebase/userFileManagement/uploadFile';
 
 // Temporary test user ID (replace with actual auth user ID in production)
-const TEST_USER_ID = 'test-user-123';
+// const TEST_USER_ID = 'test-user-123';
 
 type FileType = 'pdf' | 'image' | 'document';
 
 export default function FirebaseTestPage() {
+  const router = useRouter();
+  const { user, loading: authLoading, uid } = useAuth();
   const [firestoreStatus, setFirestoreStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [firestoreMessage, setFirestoreMessage] = useState('');
   const [storageStatus, setStorageStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -29,13 +34,21 @@ export default function FirebaseTestPage() {
   const [stats, setStats] = useState<{ totalFiles: number; totalSize: number; pdfCount: number; imageCount: number; textCount: number } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/auth/login');
+    }
+  }, [user, authLoading, router]);
+
   const refreshFiles = async () => {
+    if (!uid) return;
     try {
       const [pdfList, imageList, documentList, storageStats] = await Promise.all([
-        getUserFilesByType(TEST_USER_ID, 'pdf').catch(() => []),
-        getUserFilesByType(TEST_USER_ID, 'image').catch(() => []),
-        getUserFilesByType(TEST_USER_ID, 'text').catch(() => []),
-        getUserStorageStatsFromFirestore(TEST_USER_ID).catch(() => null),
+        getUserFilesByType(uid, 'pdf').catch(() => []),
+        getUserFilesByType(uid, 'image').catch(() => []),
+        getUserFilesByType(uid, 'text').catch(() => []),
+        getUserStorageStatsFromFirestore(uid).catch(() => null),
       ]);
       setPdfs(pdfList);
       setImages(imageList);
@@ -64,6 +77,8 @@ export default function FirebaseTestPage() {
   };
 
   useEffect(() => {
+    if (!uid) return;
+
     // Test Firestore connection
     const testFirestore = async () => {
       try {
@@ -99,17 +114,17 @@ export default function FirebaseTestPage() {
 
     testFirestore();
     testStorage();
-  }, []);
+  }, [uid]);
 
   // Handle file upload using storage.ts functions
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !uid) return;
 
     setUploading(true);
     try {
       // Use generic uploadFile - it auto-detects file type
-      const result = await uploadFile(TEST_USER_ID, file);
+      const result = await uploadFile(uid, file);
       alert(`✅ File uploaded!\nHash: ${result.hash}\nURL: ${result.url}`);
       
       // Refresh file list
@@ -130,6 +145,7 @@ export default function FirebaseTestPage() {
       case 'pdf': return '.pdf';
       case 'image': return 'image/*';
       case 'document': return '.txt,.md,.csv';
+      default: return '*';
     }
   };
 
@@ -149,12 +165,39 @@ export default function FirebaseTestPage() {
     </div>
   );
 
+  // Show loading screen while auth is loading
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
+        <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black p-4">
       <div className="w-full max-w-md p-8 rounded-lg bg-white dark:bg-zinc-900 shadow-lg">
-        <h1 className="text-2xl font-bold mb-6 text-black dark:text-white text-center">
-          Firebase Connection Test
-        </h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-black dark:text-white">
+            Firebase Test
+          </h1>
+          <button
+            onClick={async () => {
+              try {
+                await logout();
+                router.push('/auth/login');
+              } catch (error) {
+                console.error('Logout error:', error);
+              }
+            }}
+            className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
+          >
+            Logout
+          </button>
+        </div>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6 text-center">
+          {user?.email}
+        </p>
         
         <div className="space-y-4">
           {/* Firestore Status */}
@@ -189,7 +232,7 @@ export default function FirebaseTestPage() {
           {storageStatus === 'success' && (
             <div className="pt-4 border-t border-zinc-200 dark:border-zinc-700">
               <h2 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
-                Test Upload (User: {TEST_USER_ID})
+                Test Upload
               </h2>
               
               {/* Upload Type Selection */}
