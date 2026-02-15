@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
+import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import {
-  uploadFile,
   listUserPdfs,
   listUserImages,
   listUserDocuments,
   getUserStorageStats,
   StorageFile,
-} from '@/lib/storage';
+} from '@/lib/firebase/firebaseStorage';
+import { uploadFile } from '@/lib/firebase/uploadFile';
 
 // Temporary test user ID (replace with actual auth user ID in production)
 const TEST_USER_ID = 'test-user-123';

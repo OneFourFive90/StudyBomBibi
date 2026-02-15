@@ -1,4 +1,6 @@
 /*
+Pure file storage operations with Firebase Storage
+
 /users
   /{userId}
     /uploads
@@ -42,6 +44,7 @@ export interface StorageFile {
   createdAt?: string;
   size?: number;
 }
+
 
 
 
