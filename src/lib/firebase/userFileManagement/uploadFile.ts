@@ -5,13 +5,14 @@ import {
   uploadImages as uploadImagesToStorage,
   uploadDocuments as uploadDocumentsToStorage,
   UploadResult,
-} from './firebaseStorage';
-import { writeFileMetadataToFirestore } from './firestore/fileMetadata';
+} from '../firebaseStorage';
+import { writeFileMetadataToFirestore } from '../firestore/fileMetadata';
 
 function getDocumentMimeType(mimeType: string, fileName: string): string {
   if (mimeType) return mimeType;
   const ext = fileName.split('.').pop()?.toLowerCase();
   if (ext === 'md' || ext === 'markdown') return 'text/markdown';
+  if (ext === 'csv') return 'text/csv';
   return 'text/plain';
 }
 
@@ -97,14 +98,14 @@ export async function uploadFile(userId: string, file: File): Promise<UploadResu
     return uploadImage(userId, file);
   }
 
-  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown'];
-  const docExts = ['txt', 'md', 'markdown'];
+  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
+  const docExts = ['txt', 'md', 'markdown', 'csv'];
   if (docTypes.includes(file.type) || docExts.includes(fileExt || '')) {
     return uploadDocument(userId, file);
   }
 
   throw new Error(
-    `Unsupported file type: ${file.type || fileExt}. Supported: PDF, images (jpg, png, webp), documents (txt, md)`
+    `Unsupported file type: ${file.type || fileExt}. Supported: PDF, images (jpg, png, webp), documents (txt, md, csv)`
   );
 }
 

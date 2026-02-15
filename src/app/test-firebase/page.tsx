@@ -4,13 +4,12 @@ import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import {
-  listUserPdfs,
-  listUserImages,
-  listUserDocuments,
-  getUserStorageStats,
-  StorageFile,
-} from '@/lib/firebase/firebaseStorage';
-import { uploadFile } from '@/lib/firebase/uploadFile';
+  getUserFilesByType,
+  getUserStorageStatsFromFirestore,
+  FirestoreFile,
+} from '@/lib/firebase/userFileManagement/readFiles';
+import { deleteFile } from '@/lib/firebase/userFileManagement/deleteFile';
+import { uploadFile } from '@/lib/firebase/userFileManagement/uploadFile';
 
 // Temporary test user ID (replace with actual auth user ID in production)
 const TEST_USER_ID = 'test-user-123';
@@ -22,20 +21,21 @@ export default function FirebaseTestPage() {
   const [firestoreMessage, setFirestoreMessage] = useState('');
   const [storageStatus, setStorageStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [storageMessage, setStorageMessage] = useState('');
-  const [pdfs, setPdfs] = useState<StorageFile[]>([]);
-  const [images, setImages] = useState<StorageFile[]>([]);
-  const [documents, setDocuments] = useState<StorageFile[]>([]);
+  const [pdfs, setPdfs] = useState<FirestoreFile[]>([]);
+  const [images, setImages] = useState<FirestoreFile[]>([]);
+  const [documents, setDocuments] = useState<FirestoreFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState<FileType>('pdf');
-  const [stats, setStats] = useState<{ totalFiles: number; totalSize: number } | null>(null);
+  const [stats, setStats] = useState<{ totalFiles: number; totalSize: number; pdfCount: number; imageCount: number; textCount: number } | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const refreshFiles = async () => {
     try {
       const [pdfList, imageList, documentList, storageStats] = await Promise.all([
-        listUserPdfs(TEST_USER_ID).catch(() => []),
-        listUserImages(TEST_USER_ID).catch(() => []),
-        listUserDocuments(TEST_USER_ID).catch(() => []),
-        getUserStorageStats(TEST_USER_ID).catch(() => null),
+        getUserFilesByType(TEST_USER_ID, 'pdf').catch(() => []),
+        getUserFilesByType(TEST_USER_ID, 'image').catch(() => []),
+        getUserFilesByType(TEST_USER_ID, 'text').catch(() => []),
+        getUserStorageStatsFromFirestore(TEST_USER_ID).catch(() => null),
       ]);
       setPdfs(pdfList);
       setImages(imageList);
@@ -43,6 +43,23 @@ export default function FirebaseTestPage() {
       setStats(storageStats);
     } catch (error) {
       console.error('Failed to refresh files:', error);
+    }
+  };
+
+  const handleDeleteFile = async (fileId: string, storagePath: string, fileName: string) => {
+    if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+    
+    setDeleting(fileId);
+    try {
+      await deleteFile(fileId, storagePath);
+      await refreshFiles();
+      alert('File deleted successfully!');
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        alert(`Failed to delete file: ${error.message}`);
+      }
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -112,7 +129,7 @@ export default function FirebaseTestPage() {
     switch (uploadType) {
       case 'pdf': return '.pdf';
       case 'image': return 'image/*';
-      case 'document': return '.txt,.md';
+      case 'document': return '.txt,.md,.csv';
     }
   };
 
@@ -162,6 +179,9 @@ export default function FirebaseTestPage() {
               <p className="text-sm text-blue-700 dark:text-blue-300">
                 📊 {stats.totalFiles} files | {(stats.totalSize / 1024).toFixed(1)} KB total
               </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                📄 {stats.pdfCount} PDFs | 🖼️ {stats.imageCount} Images | 📝 {stats.textCount} Text
+              </p>
             </div>
           )}
 
@@ -202,7 +222,7 @@ export default function FirebaseTestPage() {
                       : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300'
                   }`}
                 >
-                  📝 TXT/MD
+                  📝 TXT/MD/CSV
                 </button>
               </div>
 
@@ -237,10 +257,17 @@ export default function FirebaseTestPage() {
               </h2>
               <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-1 max-h-32 overflow-y-auto">
                 {pdfs.map((file, i) => (
-                  <li key={i} className="truncate">
-                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500">
-                      {file.name}
+                  <li key={i} className="flex items-center justify-between">
+                    <a href={file.downloadURL} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 truncate flex-1">
+                      {file.originalName}
                     </a>
+                    <button
+                      onClick={() => handleDeleteFile(file.id, file.storagePath, file.originalName)}
+                      disabled={deleting === file.id}
+                      className="ml-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                    >
+                      {deleting === file.id ? '...' : '🗑️'}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -255,10 +282,17 @@ export default function FirebaseTestPage() {
               </h2>
               <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-1 max-h-32 overflow-y-auto">
                 {images.map((file, i) => (
-                  <li key={i} className="truncate">
-                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500">
-                      {file.name}
+                  <li key={i} className="flex items-center justify-between">
+                    <a href={file.downloadURL} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 truncate flex-1">
+                      {file.originalName}
                     </a>
+                    <button
+                      onClick={() => handleDeleteFile(file.id, file.storagePath, file.originalName)}
+                      disabled={deleting === file.id}
+                      className="ml-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                    >
+                      {deleting === file.id ? '...' : '🗑️'}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -273,10 +307,17 @@ export default function FirebaseTestPage() {
               </h2>
               <ul className="text-sm text-zinc-600 dark:text-zinc-400 space-y-1 max-h-32 overflow-y-auto">
                 {documents.map((file, i) => (
-                  <li key={i} className="truncate">
-                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500">
-                      {file.name}
+                  <li key={i} className="flex items-center justify-between">
+                    <a href={file.downloadURL} target="_blank" rel="noopener noreferrer" className="hover:text-blue-500 truncate flex-1">
+                      {file.originalName}
                     </a>
+                    <button
+                      onClick={() => handleDeleteFile(file.id, file.storagePath, file.originalName)}
+                      disabled={deleting === file.id}
+                      className="ml-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                    >
+                      {deleting === file.id ? '...' : '🗑️'}
+                    </button>
                   </li>
                 ))}
               </ul>

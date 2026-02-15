@@ -8,7 +8,7 @@ Pure file storage operations with Firebase Storage
         - {fileHash}.pdf  <-- Hash-based naming for deduplication
       /images
         - {fileHash}.{ext}  <-- Hash-based naming for deduplication
-      /documents
+      /text
         - {fileHash}.{txt|md}  <-- Hash-based naming for deduplication
     /assets
       /thumbnails
@@ -60,7 +60,7 @@ export const StoragePaths = {
   uploads: (userId: string) => `users/${userId}/uploads`,
   pdfs: (userId: string) => `users/${userId}/uploads/pdfs`,
   images: (userId: string) => `users/${userId}/uploads/images`,
-  documents: (userId: string) => `users/${userId}/uploads/documents`,
+  text: (userId: string) => `users/${userId}/uploads/text`,
   
   // Asset paths
   assets: (userId: string) => `users/${userId}/assets`,
@@ -73,8 +73,8 @@ export const StoragePaths = {
   imageFile: (userId: string, fileHash: string, extension: string = 'jpg') => 
     `users/${userId}/uploads/images/${fileHash}.${extension}`,
   
-  documentFile: (userId: string, fileHash: string, extension: string) => 
-    `users/${userId}/uploads/documents/${fileHash}.${extension}`,
+  textFile: (userId: string, fileHash: string, extension: string) => 
+    `users/${userId}/uploads/text/${fileHash}.${extension}`,
   
   thumbnailFile: (userId: string, fileId: string) => 
     `users/${userId}/assets/thumbnails/${fileId}_thumb.jpg`,
@@ -248,7 +248,7 @@ export async function uploadImage(
   // Validate file type
   const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
   if (!validTypes.includes(file.type)) {
-    throw new Error('Invalid file type. Only JPEG, PNG, and WebP images are allowed.');
+    throw new Error('Invalid file type. Only JPEG, JPG, PNG, and WebP images are allowed.');
   }
 
   // Generate hash for deduplication
@@ -307,7 +307,7 @@ export async function uploadImages(
 // ============================================
 
 /**
- * Get file extension from MIME type for documents
+ * Get file extension from MIME type for documents (now supports csv)
  */
 function getDocumentExtension(mimeType: string, fileName: string): string {
   // Check MIME type first
@@ -315,6 +315,7 @@ function getDocumentExtension(mimeType: string, fileName: string): string {
     'text/plain': 'txt',
     'text/markdown': 'md',
     'text/x-markdown': 'md',
+    'text/csv': 'csv',
   };
   
   if (mimeToExt[mimeType]) {
@@ -325,6 +326,7 @@ function getDocumentExtension(mimeType: string, fileName: string): string {
   const ext = fileName.split('.').pop()?.toLowerCase();
   if (ext === 'md' || ext === 'markdown') return 'md';
   if (ext === 'txt') return 'txt';
+  if (ext === 'csv') return 'csv';
   
   return 'txt'; // default
 }
@@ -338,18 +340,18 @@ export async function uploadDocument(
   file: File
 ): Promise<UploadResult> {
   // Validate file type
-  const validTypes = ['text/plain', 'text/markdown', 'text/x-markdown'];
-  const validExtensions = ['txt', 'md', 'markdown'];
+  const validTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
+  const validExtensions = ['txt', 'md', 'markdown', 'csv'];
   const fileExt = file.name.split('.').pop()?.toLowerCase();
   
   if (!validTypes.includes(file.type) && !validExtensions.includes(fileExt || '')) {
-    throw new Error('Invalid file type. Only .txt and .md files are allowed.');
+    throw new Error('Invalid file type. Only .txt, .md, and .csv files are allowed.');
   }
 
   // Generate hash for deduplication
   const fileHash = await generateShortHash(file);
   const extension = getDocumentExtension(file.type, file.name);
-  const filePath = StoragePaths.documentFile(userId, fileHash, extension);
+  const filePath = StoragePaths.textFile(userId, fileHash, extension);
 
   // Check if file already exists (deduplication)
   const exists = await fileExists(filePath);
@@ -366,8 +368,15 @@ export async function uploadDocument(
 
   // Upload new file
   const fileRef = ref(storage, filePath);
+  // Set correct contentType for csv
+  let contentType = file.type;
+  if (!contentType) {
+    if (extension === 'csv') contentType = 'text/csv';
+    else if (extension === 'md') contentType = 'text/markdown';
+    else contentType = 'text/plain';
+  }
   const metadata: UploadMetadata = {
-    contentType: file.type || 'text/plain',
+    contentType,
     customMetadata: {
       originalName: file.name,
       uploadedAt: new Date().toISOString(),
@@ -401,7 +410,7 @@ export async function uploadDocuments(
  * List all documents for a user
  */
 export async function listUserDocuments(userId: string): Promise<StorageFile[]> {
-  const folderRef = ref(storage, StoragePaths.documents(userId));
+  const folderRef = ref(storage, StoragePaths.text(userId));
   const result = await listAll(folderRef);
 
   const files = await Promise.all(
@@ -446,9 +455,9 @@ export async function uploadFile(
     return uploadImage(userId, file);
   }
   
-  // Documents (.txt, .md)
-  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown'];
-  const docExts = ['txt', 'md', 'markdown'];
+  // Documents (.txt, .md, .csv)
+  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
+  const docExts = ['txt', 'md', 'markdown', 'csv'];
   if (docTypes.includes(file.type) || docExts.includes(fileExt || '')) {
     return uploadDocument(userId, file);
   }
@@ -620,55 +629,6 @@ export async function deleteFile(filePath: string): Promise<void> {
   await deleteObject(fileRef);
 }
 
-/**
- * Delete all files in a user's folder
- */
-export async function deleteUserFolder(
-  userId: string,
-  folder: 'pdfs' | 'images' | 'documents' | 'thumbnails' | 'all'
-): Promise<number> {
-  let paths: string[] = [];
-
-  switch (folder) {
-    case 'pdfs':
-      paths = [StoragePaths.pdfs(userId)];
-      break;
-    case 'images':
-      paths = [StoragePaths.images(userId)];
-      break;
-    case 'documents':
-      paths = [StoragePaths.documents(userId)];
-      break;
-    case 'thumbnails':
-      paths = [StoragePaths.thumbnails(userId)];
-      break;
-    case 'all':
-      paths = [
-        StoragePaths.pdfs(userId),
-        StoragePaths.images(userId),
-        StoragePaths.documents(userId),
-        StoragePaths.thumbnails(userId),
-      ];
-      break;
-  }
-
-  let deletedCount = 0;
-
-  for (const path of paths) {
-    const folderRef = ref(storage, path);
-    const result = await listAll(folderRef);
-
-    await Promise.all(
-      result.items.map(async (item) => {
-        await deleteObject(item);
-        deletedCount++;
-      })
-    );
-  }
-
-  return deletedCount;
-}
-
 // ============================================
 // Storage Statistics
 // ============================================
@@ -684,7 +644,7 @@ export async function getUserStorageStats(userId: string): Promise<{
   documentCount: number;
   thumbnailCount: number;
 }> {
-  const [pdfs, images, documents, thumbnails] = await Promise.all([
+  const [pdfs, images, textFiles, thumbnails] = await Promise.all([
     listUserPdfs(userId).catch(() => []),
     listUserImages(userId).catch(() => []),
     listUserDocuments(userId).catch(() => []),
@@ -695,14 +655,14 @@ export async function getUserStorageStats(userId: string): Promise<{
 
   const pdfSize = pdfs.reduce((acc, f) => acc + (f.size || 0), 0);
   const imageSize = images.reduce((acc, f) => acc + (f.size || 0), 0);
-  const documentSize = documents.reduce((acc, f) => acc + (f.size || 0), 0);
+  const textSize = textFiles.reduce((acc, f) => acc + (f.size || 0), 0);
 
   return {
-    totalFiles: pdfs.length + images.length + documents.length + thumbnails.length,
-    totalSize: pdfSize + imageSize + documentSize,
+    totalFiles: pdfs.length + images.length + textFiles.length + thumbnails.length,
+    totalSize: pdfSize + imageSize + textSize,
     pdfCount: pdfs.length,
     imageCount: images.length,
-    documentCount: documents.length,
+    documentCount: textFiles.length,
     thumbnailCount: thumbnails.length,
   };
 }
