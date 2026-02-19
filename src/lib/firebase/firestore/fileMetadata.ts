@@ -23,8 +23,6 @@ export async function writeFileMetadataToFirestore(
     fileSize: input.file.size,
     uploadedAt: serverTimestamp(),
     folderId: null,
-    tags: [] as string[],
-    category: '',
     extractedText: '',
     vectorEmbedding: [] as number[],
   };

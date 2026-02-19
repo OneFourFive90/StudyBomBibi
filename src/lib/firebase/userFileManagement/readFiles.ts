@@ -18,8 +18,6 @@ export interface FirestoreFile {
   fileSize: number;
   uploadedAt: Timestamp;
   folderId: string | null;
-  tags: string[];
-  category: string;
   extractedText: string;
   vectorEmbedding: number[];
 }
