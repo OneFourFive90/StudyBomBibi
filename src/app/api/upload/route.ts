@@ -82,7 +82,7 @@ export async function POST(req: Request) {
       // PDF / SLIDE LOGIC
       aiInstruction = `
     Read this document and extract all text.
-    - Ignore headers, footers, page numbers, and references.
+    - For header/footer/page numbers, can label them as [Header], [Footer], [Page Number: X].
     - Format the output as clean, readable Markdown.
     - If there are images/diagrams within the PDF, describe them briefly in [brackets].
   `;
