@@ -4,7 +4,7 @@ import {
   uploadDocument as uploadDocumentToStorage,
   UploadResult,
 } from '../firebaseStorage';
-import { writeFileMetadataToFirestore } from '../firestore/fileMetadata';
+import { writeFileMetadataToFirestore } from '../firestore/writeFileMetadata';
 
 function getDocumentMimeType(mimeType: string, fileName: string): string {
   if (mimeType) return mimeType;
