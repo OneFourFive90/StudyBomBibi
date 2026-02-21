@@ -295,12 +295,12 @@ export async function uploadImage(
  * Upload multiple images in batch
  * Duplicate files are automatically deduplicated by hash
  */
-export async function uploadImages(
-  userId: string,
-  files: File[]
-): Promise<UploadResult[]> {
-  return Promise.all(files.map(file => uploadImage(userId, file)));
-}
+// export async function uploadImages(
+//   userId: string,
+//   files: File[]
+// ): Promise<UploadResult[]> {
+//   return Promise.all(files.map(file => uploadImage(userId, file)));
+// }
 
 // ============================================
 // Document Upload Functions (.txt, .md)
@@ -399,12 +399,12 @@ export async function uploadDocument(
  * Upload multiple documents in batch
  * Duplicate files are automatically deduplicated by hash
  */
-export async function uploadDocuments(
-  userId: string,
-  files: File[]
-): Promise<UploadResult[]> {
-  return Promise.all(files.map(file => uploadDocument(userId, file)));
-}
+// export async function uploadDocuments(
+//   userId: string,
+//   files: File[]
+// ): Promise<UploadResult[]> {
+//   return Promise.all(files.map(file => uploadDocument(userId, file)));
+// }
 
 /**
  * List all documents for a user

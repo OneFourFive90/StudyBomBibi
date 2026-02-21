@@ -8,6 +8,7 @@ export interface FileMetadataInput {
   storagePath: string;
   downloadURL: string;
   mimeType: string;
+  extractedText: string;
 }
 
 export async function writeFileMetadataToFirestore(
@@ -23,7 +24,7 @@ export async function writeFileMetadataToFirestore(
     fileSize: input.file.size,
     uploadedAt: serverTimestamp(),
     folderId: null,
-    extractedText: '',
+    extractedText: input.extractedText,
     vectorEmbedding: [] as number[],
   };
 
