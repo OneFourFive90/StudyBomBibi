@@ -49,8 +49,9 @@ export default function QuizGeneratorPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("userId", TEST_USER_ID);
 
-      const response = await fetch("/api/ai-extract-text-from-file", {
+      const response = await fetch("/api/upload-file", {
         method: "POST",
         body: formData,
       });
