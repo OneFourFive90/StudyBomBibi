@@ -98,7 +98,7 @@ export interface AIGeneratedQuiz {
  * @param mode - Quiz mode (mcq or past_year)
  * @returns Transformed questions array in Firestore format
  */
-function transformAIQuizToFirestore(
+export function transformAIQuizToFirestore(
   aiQuiz: AIGeneratedQuiz,
   mode: "mcq" | "past_year"
 ): QuizQuestion[] {
@@ -177,7 +177,7 @@ function transformAIQuizToFirestore(
  * @param questions - Array of quiz questions
  * @returns QuizScore object
  */
-function calculateInitialScore(questions: QuizQuestion[]): QuizScore {
+export function calculateInitialScore(questions: QuizQuestion[]): QuizScore {
   let mcqTotal = 0;
   let structuredTotal = 0;
 
@@ -197,34 +197,30 @@ function calculateInitialScore(questions: QuizQuestion[]): QuizScore {
 }
 
 /**
- * Save AI-generated quiz to Firestore
+ * Save pre-transformed quiz to Firestore
  * @param ownerId - The user's UID
- * @param title - Quiz title (can be from AI or custom)
- * @param aiQuiz - The quiz response from AI
+ * @param title - Quiz title
  * @param mode - Quiz mode (mcq or past_year)
+ * @param questions - Pre-transformed questions array (in Firestore format)
+ * @param score - Pre-calculated score
  * @returns Promise with the document reference
  */
 export async function saveQuizToFirestore(
   ownerId: string,
   title: string,
-  aiQuiz: AIGeneratedQuiz,
-  mode: "mcq" | "past_year"
+  mode: "mcq" | "past_year",
+  questions: QuizQuestion[],
+  score: QuizScore
 ): Promise<DocumentReference> {
   try {
-    // Transform AI quiz to Firestore format
-    const transformedQuestions = transformAIQuizToFirestore(aiQuiz, mode);
-
-    // Calculate initial score
-    const initialScore = calculateInitialScore(transformedQuestions);
-
     // Create quiz document
     const quizData: QuizDocument = {
       ownerId,
-      title: title || aiQuiz.title || "Untitled Quiz",
+      title: title || "Untitled Quiz",
       mode,
       status: "uncomplete",
-      score: initialScore,
-      questions: transformedQuestions,
+      score,
+      questions,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };

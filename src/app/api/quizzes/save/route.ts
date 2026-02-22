@@ -1,35 +1,20 @@
 /*
-Input extracted text and get AI-generated quiz, then save to Firestore
+When users press save, call the api to store
+quiz data (already in Firestore format) into Firestore
 */
 
 import { NextResponse } from "next/server";
-import { generateQuizWithAI } from "@/lib/ai/AIgenerateQuiz";
 import { saveQuizToFirestore } from "@/lib/firebase/firestore/saveQuizToFirestore";
+import { QuizQuestion, QuizScore } from "@/lib/firebase/firestore/saveQuizToFirestore";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const {
-      ownerId,
-      mode,
-      sourceText,
-      pastYearText,
-      numQuestions,
-      customPrompt,
-      duration,
-      customTitle,
-    } = body;
+    const { ownerId, mode, quizData, customTitle } = body;
 
     // Validate required fields
     if (!ownerId) {
       return NextResponse.json({ error: "Missing ownerId." }, { status: 400 });
-    }
-
-    if (!sourceText || !Array.isArray(sourceText)) {
-      return NextResponse.json(
-        { error: "Missing or invalid source text." },
-        { status: 400 }
-      );
     }
 
     if (!mode || !["mcq", "past_year"].includes(mode)) {
@@ -39,44 +24,50 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!numQuestions || numQuestions <= 0) {
+    if (
+      !quizData ||
+      !quizData.title ||
+      !Array.isArray(quizData.questions) ||
+      !quizData.score
+    ) {
       return NextResponse.json(
-        { error: "numQuestions must be greater than 0." },
+        {
+          error:
+            "Invalid quizData. Must include title, questions array, and score.",
+        },
         { status: 400 }
       );
     }
 
-    // Generate quiz with AI
-    const aiQuiz = await generateQuizWithAI(
-      mode,
-      sourceText,
-      numQuestions,
-      customPrompt,
-      pastYearText,
-      duration
-    );
+    if (quizData.questions.length === 0) {
+      return NextResponse.json(
+        { error: "Quiz must contain at least one question." },
+        { status: 400 }
+      );
+    }
 
-    // Save quiz to Firestore
+    // Save to Firestore using utility function
     const docRef = await saveQuizToFirestore(
       ownerId,
-      customTitle || aiQuiz.title || "Untitled Quiz",
-      aiQuiz,
-      mode
+      customTitle || quizData.title,
+      mode,
+      quizData.questions as QuizQuestion[],
+      quizData.score as QuizScore
     );
 
     return NextResponse.json({
       success: true,
       quizId: docRef.id,
-      title: aiQuiz.title,
-      questionCount: aiQuiz.questions.length,
-      message: "Quiz generated and saved successfully",
+      title: customTitle || quizData.title,
+      questionCount: quizData.questions.length,
+      message: "Quiz saved successfully",
     });
   } catch (error: unknown) {
-    console.error("Generate and Save Quiz Error:", error);
+    console.error("Save Quiz Error:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to generate and save quiz", details: errorMessage },
+      { error: "Failed to save quiz", details: errorMessage },
       { status: 500 }
     );
   }
