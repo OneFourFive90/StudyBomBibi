@@ -60,7 +60,7 @@ Quiz Viewer loads from Firestore
 ```json
 {
   "mode": "mcq" | "past_year",
-  "sourceText": ["Material 1", "Material 2", ...],
+  "sourceText": ["Material 1", "Material 2", ...], // frontend needs to fetch extracted text from the files using the given fileIds before calling this API
   "numQuestions": 5,
   "customPrompt": "optional instructions",
   "pastYearText": ["..."] // only for past_year mode
