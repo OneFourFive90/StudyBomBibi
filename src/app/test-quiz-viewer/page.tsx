@@ -1,59 +1,73 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { db } from "@/lib/firebase/firebase";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
 import {
   QuizDocument,
   MCQQuestion,
   StructuredQuestion,
 } from "@/lib/firebase/firestore/saveQuizToFirestore";
+import {
+  getQuizzesMetadataByOwnerId,
+  getQuizById,
+  QuizMetadata,
+} from "@/lib/firebase/firestore/readQuizzesFromFirestore";
 
 const TEST_USER_ID = "test-user-123";
 
 export default function QuizViewerPage() {
-  const [quizzes, setQuizzes] = useState<(QuizDocument & { id: string })[]>([]);
+  const [quizzesMetadata, setQuizzesMetadata] = useState<QuizMetadata[]>([]);
   const [selectedQuiz, setSelectedQuiz] = useState<
     (QuizDocument & { id: string }) | null
   >(null);
   const [loading, setLoading] = useState(true);
+  const [loadingQuizId, setLoadingQuizId] = useState<string | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
-  // Fetch all quizzes for the test user
+  // Fetch quiz metadata only (lightweight) on initial load
   useEffect(() => {
-    const fetchQuizzes = async () => {
+    const fetchQuizzesMetadata = async () => {
       try {
-        const quizzesCollection = collection(db, "quizzes");
-        const q = query(quizzesCollection, where("ownerId", "==", TEST_USER_ID));
-        const snapshot = await getDocs(q);
-
-        const fetchedQuizzes = snapshot.docs.map((doc) => ({
-          ...(doc.data() as QuizDocument),
-          id: doc.id,
-        }));
-
-        setQuizzes(fetchedQuizzes);
+        const metadata = await getQuizzesMetadataByOwnerId(TEST_USER_ID);
+        setQuizzesMetadata(metadata);
         setLoading(false);
       } catch (error) {
-        console.error("Error fetching quizzes:", error);
+        console.error("Error fetching quiz metadata:", error);
         setLoading(false);
       }
     };
 
-    fetchQuizzes();
+    fetchQuizzesMetadata();
   }, []);
+
+  // Fetch full quiz data when user selects a quiz
+  const handleSelectQuiz = async (quizMetadata: QuizMetadata) => {
+    setLoadingQuizId(quizMetadata.id);
+    try {
+      // ✅ FIXED: Proper async call to fetch full quiz
+      const fullQuiz = await getQuizById(quizMetadata.id);
+      if (fullQuiz) {
+        setSelectedQuiz(fullQuiz);
+      }
+    } catch (error) {
+      console.error("Error fetching full quiz:", error);
+    } finally {
+      setLoadingQuizId(null);
+    }
+  };
 
   if (loading) {
     return <div className="p-8">Loading quizzes...</div>;
   }
 
+  // ✅ FIXED: Show list if no quiz selected
   if (!selectedQuiz) {
-    return <QuizzesList quizzes={quizzes} onSelectQuiz={setSelectedQuiz} />;
+    return (
+      <QuizzesList
+        quizzesMetadata={quizzesMetadata}
+        onSelectQuiz={handleSelectQuiz}
+        loadingQuizId={loadingQuizId}
+      />
+    );
   }
 
   return (
@@ -70,16 +84,19 @@ export default function QuizViewerPage() {
 }
 
 // ============================================================================
-// Component: Quiz List
+// Component: Quizzes List
 // ============================================================================
+// ✅ FIXED: Proper component definition with props
 function QuizzesList({
-  quizzes,
+  quizzesMetadata,
   onSelectQuiz,
+  loadingQuizId,
 }: {
-  quizzes: (QuizDocument & { id: string })[];
-  onSelectQuiz: (quiz: QuizDocument & { id: string }) => void;
+  quizzesMetadata: QuizMetadata[];
+  onSelectQuiz: (quiz: QuizMetadata) => void;
+  loadingQuizId: string | null;
 }) {
-  if (quizzes.length === 0) {
+  if (quizzesMetadata.length === 0) {
     return (
       <div className="p-8">
         <h1 className="text-2xl font-bold mb-4">My Quizzes</h1>
@@ -92,11 +109,16 @@ function QuizzesList({
     <div className="p-8">
       <h1 className="text-2xl font-bold mb-6">My Quizzes</h1>
       <div className="grid gap-4">
-        {quizzes.map((quiz) => (
+        {quizzesMetadata.map((quiz) => (
+          // ✅ FIXED: Single root div per map item (no fragment needed)
           <div
             key={quiz.id}
-            className="border rounded-lg p-4 hover:shadow-lg cursor-pointer transition"
-            onClick={() => onSelectQuiz(quiz)}
+            className={`border rounded-lg p-4 hover:shadow-lg transition ${
+              loadingQuizId === quiz.id
+                ? "opacity-50 cursor-wait"
+                : "cursor-pointer"
+            }`}
+            onClick={() => !loadingQuizId && onSelectQuiz(quiz)}
           >
             <div className="flex justify-between items-start">
               <div>
@@ -105,10 +127,13 @@ function QuizzesList({
                   Mode: <span className="font-medium">{quiz.mode}</span>
                 </p>
                 <p className="text-sm text-gray-600">
-                  Questions: {quiz.questions.length}
+                  Questions: {quiz.questions?.length ?? 0}
                 </p>
               </div>
-              <div>
+              <div className="flex flex-col items-end gap-2">
+                {loadingQuizId === quiz.id && (
+                  <div className="text-sm text-gray-500">Loading...</div>
+                )}
                 <span
                   className={`px-3 py-1 rounded-full text-sm font-medium ${
                     quiz.status === "completed"
@@ -120,10 +145,12 @@ function QuizzesList({
                 </span>
               </div>
             </div>
+            
+            {/* ✅ FIXED: Score section properly nested */}
             <div className="mt-3 text-sm text-gray-600">
-              <div>MCQ Total: {quiz.score.mcqTotal}</div>
-              <div>Structured Total: {quiz.score.structuredTotal}</div>
-              <div>Score: {quiz.score.mcqScore}</div>
+              <div>MCQ Total: {quiz.score?.mcqTotal ?? 0}</div>
+              <div>Structured Total: {quiz.score?.structuredTotal ?? 0}</div>
+              <div>Score: {quiz.score?.mcqScore ?? 0}</div>
             </div>
           </div>
         ))}
@@ -147,7 +174,7 @@ function QuizViewer({
   setCurrentQuestionIndex: (index: number) => void;
 }) {
   const currentQuestion = quiz.questions[currentQuestionIndex];
-  const isMCQ = currentQuestion.type === "mcq";
+  const isMCQ = currentQuestion?.type === "mcq";
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -186,7 +213,7 @@ function QuizViewer({
         {/* Question Section */}
         <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
           <h2 className="text-xl font-semibold mb-6">
-            {currentQuestion.question}
+            {currentQuestion?.question}
           </h2>
 
           {isMCQ ? (
@@ -275,13 +302,11 @@ function MCQViewer({
 
   const handleSelectOption = async (index: number) => {
     setSelectedIndex(index);
-
-    // Update Firestore
     try {
       console.log(
         `Selected option ${index}: ${index === question.correctAnswerIndex ? "Correct!" : "Incorrect"}`
       );
-      // In a real app, you'd update the specific question in the array
+      // TODO: Update Firestore in real app
     } catch (error) {
       console.error("Error updating question:", error);
     }
@@ -318,7 +343,6 @@ function MCQViewer({
         ))}
       </div>
 
-      {/* Show result after selection */}
       {selectedIndex !== null && (
         <div
           className={`p-4 rounded-lg ${
@@ -363,8 +387,8 @@ function StructuredViewer({
   );
 
   const handleSaveAnswer = async () => {
-    // In a real app, update Firestore with the user answer
     console.log("User answer saved:", userAnswer);
+    // TODO: Update Firestore in real app
   };
 
   return (
