@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Timestamp } from "firebase/firestore";
 import { QuizQuestion } from "@/lib/firebase/firestore/saveQuizToFirestore";
 import { useRouter } from "next/navigation";
 
@@ -10,6 +9,7 @@ const TEST_USER_ID = "test-user-123";
 interface PreviewQuiz {
   title: string;
   duration?: string;
+  totalMarks?: number | null;
   questions: QuizQuestion[];
   score: {
     mcqScore: number;
@@ -27,11 +27,64 @@ export default function QuizGeneratorPage() {
   const [numQuestions, setNumQuestions] = useState<number>(5);
   const [customPrompt, setCustomPrompt] = useState<string>("");
   const [duration, setDuration] = useState<string>("");
+  const [totalMarks, setTotalMarks] = useState<number>(100);
 
   const [previewQuiz, setPreviewQuiz] = useState<PreviewQuiz | null>(null);
   const [customTitle, setCustomTitle] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [extractingSource, setExtractingSource] = useState(false);
+  const [extractingPastYear, setExtractingPastYear] = useState(false);
+
+  const handleExtractFileToText = async (
+    file: File,
+    target: "source" | "past_year"
+  ) => {
+    const setExtracting =
+      target === "source" ? setExtractingSource : setExtractingPastYear;
+
+    setError("");
+    setExtracting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/ai-extract-text-from-file", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to extract text from file");
+      }
+
+      const extractedText = (data.extractText || "").trim();
+      if (!extractedText) {
+        throw new Error("No extractable text found in the uploaded file.");
+      }
+
+      if (target === "source") {
+        setSourceText((prev) =>
+          prev.trim()
+            ? `${prev}\n\n--- Extracted from ${file.name} ---\n${extractedText}`
+            : `--- Extracted from ${file.name} ---\n${extractedText}`
+        );
+      } else {
+        setPastYearText((prev) =>
+          prev.trim()
+            ? `${prev}\n\n--- Extracted from ${file.name} ---\n${extractedText}`
+            : `--- Extracted from ${file.name} ---\n${extractedText}`
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "File extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   // Handle quiz generation
   const handleGenerate = async () => {
@@ -53,6 +106,7 @@ export default function QuizGeneratorPage() {
           numQuestions,
           customPrompt: customPrompt || undefined,
           duration: mode === "past_year" ? duration : undefined,
+          totalMarks: mode === "past_year" ? totalMarks : undefined,
         }),
       });
 
@@ -65,6 +119,7 @@ export default function QuizGeneratorPage() {
       setPreviewQuiz({
         title: data.title,
         duration: data.duration,
+        totalMarks: data.totalMarks,
         questions: data.questions,
         score: data.score,
       });
@@ -157,6 +212,25 @@ export default function QuizGeneratorPage() {
             <p className="text-sm text-gray-600 mb-3">
               Paste your study notes, textbook excerpts, or any content you want to quiz on
             </p>
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-2">Or upload a real file</label>
+              <input
+                type="file"
+                accept=".pdf,.txt,.md,.csv,image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void handleExtractFileToText(file, "source");
+                  }
+                  e.target.value = "";
+                }}
+                disabled={extractingSource || loading}
+                className="block w-full text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+              />
+              {extractingSource && (
+                <p className="mt-2 text-xs text-blue-600">Extracting text from file...</p>
+              )}
+            </div>
             <textarea
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}
@@ -173,6 +247,25 @@ export default function QuizGeneratorPage() {
               <p className="text-sm text-gray-600 mb-3">
                 Paste the structure/template of the past year paper to mimic
               </p>
+              <div className="mb-3">
+                <label className="block text-sm font-medium mb-2">Or upload a real past year file</label>
+                <input
+                  type="file"
+                  accept=".pdf,.txt,.md,.csv,image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      void handleExtractFileToText(file, "past_year");
+                    }
+                    e.target.value = "";
+                  }}
+                  disabled={extractingPastYear || loading}
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                />
+                {extractingPastYear && (
+                  <p className="mt-2 text-xs text-blue-600">Extracting text from file...</p>
+                )}
+              </div>
               <textarea
                 value={pastYearText}
                 onChange={(e) => setPastYearText(e.target.value)}
@@ -200,19 +293,36 @@ export default function QuizGeneratorPage() {
                   className="w-full p-2 border rounded focus:outline-none focus:border-blue-500"
                 />
               </div>
-              {mode === "past_year" && (
+              {mode === "past_year" ? (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Duration</label>
+                  <label className="block text-sm font-medium mb-2">Total Marks</label>
                   <input
-                    type="text"
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                    placeholder="e.g., 2 hours"
+                    type="number"
+                    value={totalMarks}
+                    onChange={(e) =>
+                      setTotalMarks(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                    min="1"
                     className="w-full p-2 border rounded focus:outline-none focus:border-blue-500"
                   />
                 </div>
+              ) : (
+                <div />
               )}
             </div>
+
+            {mode === "past_year" && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Duration</label>
+                <input
+                  type="text"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  placeholder="e.g., 2 hours"
+                  className="w-full p-2 border rounded focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            )}
 
             <div className="mt-4">
               <label className="block text-sm font-medium mb-2">Custom Instructions (Optional)</label>
@@ -291,7 +401,7 @@ export default function QuizGeneratorPage() {
               <div>
                 <div className="text-gray-600 text-sm">Total Marks</div>
                 <div className="text-2xl font-bold">
-                  {previewQuiz.score.mcqTotal + previewQuiz.score.structuredTotal}
+                  {previewQuiz.totalMarks ?? (previewQuiz.score.mcqTotal + previewQuiz.score.structuredTotal)}
                 </div>
               </div>
             </div>
@@ -308,7 +418,7 @@ export default function QuizGeneratorPage() {
 
                   {question.type === "mcq" ? (
                     <div className="space-y-2">
-                      {(question as any).options.map((option: string, optIdx: number) => (
+                      {(question.options || []).map((option: string, optIdx: number) => (
                         <div
                           key={optIdx}
                           className="p-3 rounded border border-gray-300 bg-gray-50 text-gray-600 cursor-not-allowed"
@@ -320,7 +430,7 @@ export default function QuizGeneratorPage() {
                         </div>
                       ))}
                       <div className="mt-3 text-xs text-gray-600">
-                        Marks: {(question as any).marks} • Type: MCQ
+                        Marks: {question.marks} • Type: MCQ
                       </div>
                     </div>
                   ) : (
@@ -332,7 +442,7 @@ export default function QuizGeneratorPage() {
                         rows={4}
                       />
                       <div className="mt-3 text-xs text-gray-600">
-                        Marks: {(question as any).marks} • Type: Structured
+                        Marks: {question.marks} • Type: Structured
                       </div>
                     </div>
                   )}

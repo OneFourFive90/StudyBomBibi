@@ -127,7 +127,7 @@ function QuizzesList({
                   Mode: <span className="font-medium">{quiz.mode}</span>
                 </p>
                 <p className="text-sm text-gray-600">
-                  Questions: {quiz.questions?.length ?? 0}
+                  Questions: Available after opening quiz
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
@@ -219,12 +219,10 @@ function QuizViewer({
           {isMCQ ? (
             <MCQViewer
               question={currentQuestion as MCQQuestion}
-              quizId={quiz.id}
             />
           ) : (
             <StructuredViewer
               question={currentQuestion as StructuredQuestion}
-              quizId={quiz.id}
             />
           )}
         </div>
@@ -291,10 +289,8 @@ function QuizViewer({
 // ============================================================================
 function MCQViewer({
   question,
-  quizId,
 }: {
   question: MCQQuestion;
-  quizId: string;
 }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     question.userSelectedIndex
@@ -375,10 +371,8 @@ function MCQViewer({
 // ============================================================================
 function StructuredViewer({
   question,
-  quizId,
 }: {
   question: StructuredQuestion;
-  quizId: string;
 }) {
   const [userAnswer, setUserAnswer] = useState(question.userAnswerText || "");
   const [showSample, setShowSample] = useState(false);
@@ -441,7 +435,7 @@ function StructuredViewer({
         </div>
         {selfGrade !== null && (
           <p className="text-sm text-gray-600">
-            You've graded yourself: {selfGrade}/{question.marks}
+            You&apos;ve graded yourself: {selfGrade}/{question.marks}
           </p>
         )}
       </div>

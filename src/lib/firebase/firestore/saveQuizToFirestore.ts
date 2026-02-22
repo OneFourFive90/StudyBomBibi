@@ -80,6 +80,7 @@ export interface PastYearModeQuestion {
   section: string;
   type: "mcq" | "structured";
   question: string;
+  marks: number;
   options?: string[] | null;
   answer_key: string;
 }
@@ -90,6 +91,7 @@ export interface AIGeneratedQuiz {
   title: string;
   questions: AIQuestionFormat[];
   duration?: string;
+  totalMarks?: number;
 }
 
 /**
@@ -102,6 +104,11 @@ export function transformAIQuizToFirestore(
   aiQuiz: AIGeneratedQuiz,
   mode: "mcq" | "past_year"
 ): QuizQuestion[] {
+  const normalizePositiveMark = (value: unknown, fallback: number): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
+  };
+
   return aiQuiz.questions.map((question, index) => {
     const baseId = `q_${question.id || index + 1}`;
 
@@ -139,7 +146,7 @@ export function transformAIQuizToFirestore(
           id: baseId,
           type: "mcq",
           question: pastYearQuestion.question,
-          marks: 1, // Default MCQ mark value
+          marks: normalizePositiveMark((pastYearQuestion as AIGeneratedQuestion).marks, 1),
           options: pastYearQuestion.options as string[],
           correctAnswerIndex: correctAnswerIndex !== -1 ? correctAnswerIndex : 0,
           userSelectedIndex: null,
@@ -151,7 +158,7 @@ export function transformAIQuizToFirestore(
           id: baseId,
           type: "structured",
           question: pastYearQuestion.question,
-          marks: 3, // Default structured marks
+          marks: normalizePositiveMark((pastYearQuestion as AIGeneratedQuestion).marks, 3),
           sampleAnswer: pastYearQuestion.answer_key,
           userAnswerText: null,
           selfGradedScore: null,
@@ -165,7 +172,7 @@ export function transformAIQuizToFirestore(
       type: "structured",
       question: question.question,
       marks: 3,
-      sampleAnswer: (question as any).answer_key || (question as any).answer || "",
+      sampleAnswer: (question as AIGeneratedQuestion).answer_key || (question as AIGeneratedQuestion).answer || "",
       userAnswerText: null,
       selfGradedScore: null,
     } as StructuredQuestion;

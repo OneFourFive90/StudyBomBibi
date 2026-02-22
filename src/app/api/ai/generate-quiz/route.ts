@@ -21,6 +21,7 @@ export async function POST(req: Request) {
       numQuestions,
       customPrompt,
       duration,
+      totalMarks,
     } = body;
 
     // Validate required fields
@@ -45,6 +46,15 @@ export async function POST(req: Request) {
       );
     }
 
+    if (mode === "past_year") {
+      if (!Number.isFinite(totalMarks) || totalMarks <= 0) {
+        return NextResponse.json(
+          { error: "totalMarks must be a positive number for past_year mode." },
+          { status: 400 }
+        );
+      }
+    }
+
     // Generate quiz with AI
     const aiQuiz = await generateQuizWithAI(
       mode,
@@ -52,7 +62,8 @@ export async function POST(req: Request) {
       numQuestions,
       customPrompt,
       pastYearText,
-      duration
+      duration,
+      mode === "past_year" ? Number(totalMarks) : undefined
     );
 
     // Transform to Firestore format
@@ -60,12 +71,34 @@ export async function POST(req: Request) {
       aiQuiz,
       mode
     );
+
+    if (mode === "past_year") {
+      const transformedTotalMarks = transformedQuestions.reduce(
+        (sum, question) => sum + question.marks,
+        0
+      );
+
+      if (transformedTotalMarks !== Number(totalMarks)) {
+        return NextResponse.json(
+          {
+            error: "Generated quiz total marks mismatch.",
+            details: `Expected ${Number(totalMarks)}, got ${transformedTotalMarks}. Please regenerate.`,
+          },
+          { status: 422 }
+        );
+      }
+    }
+
     const score: QuizScore = calculateInitialScore(transformedQuestions);
 
     return NextResponse.json({
       success: true,
       title: aiQuiz.title,
       duration: aiQuiz.duration || null,
+      totalMarks:
+        mode === "past_year"
+          ? transformedQuestions.reduce((sum, question) => sum + question.marks, 0)
+          : null,
       questions: transformedQuestions,
       score,
       message: "Quiz generated successfully. Preview before saving.",
