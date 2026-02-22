@@ -54,7 +54,10 @@ export async function POST(req: Request) {
 
     if (!aiResponse.ok) {
       const errorData = await aiResponse.json();
-      throw new Error(errorData.error || "AI extraction failed");
+      const detailText = [errorData.error, errorData.details]
+        .filter(Boolean)
+        .join(" ");
+      throw new Error(detailText || "AI extraction failed");
     }
 
     const aiData = await aiResponse.json();
@@ -65,6 +68,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      extractText: extractedText,
       uploadResult: {
         path: uploadResult.path,
         url: uploadResult.url,
@@ -74,8 +78,9 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error("Upload Error:", error);
+    const message = error instanceof Error ? error.message : "Failed to process file";
     return NextResponse.json(
-      { error: "Failed to process file" },
+      { error: "Failed to process file", details: message },
       { status: 500 }
     );
   }

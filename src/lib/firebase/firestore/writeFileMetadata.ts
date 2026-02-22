@@ -1,4 +1,11 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  serverTimestamp,
+  where,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 
 export interface FileMetadataInput {
@@ -29,7 +36,19 @@ export async function writeFileMetadataToFirestore(
   };
 
   try{
-    await addDoc(collection(db, 'files'), payload);
+    const filesCollection = collection(db, 'files');
+    const existingQuery = query(
+      filesCollection,
+      where('ownerId', '==', input.userId),
+      where('fileHash', '==', input.fileHash)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+
+    if (!existingSnapshot.empty) {
+      return;
+    }
+
+    await addDoc(filesCollection, payload);
   } catch (error) {
     console.error('Error writing file metadata to Firestore:', error);
     throw new Error('Failed to save file metadata. Please try again.');

@@ -17,7 +17,8 @@ export async function generateQuizWithAI(
   numQuestions: number,
   customPrompt?: string,
   pastYearText?: string[],
-  duration?: string
+  duration?: string,
+  totalMarks?: number
 ): Promise<AIGeneratedQuiz> {
   if (!sourceText || !Array.isArray(sourceText)) {
     throw new Error("Missing or invalid source text.");
@@ -61,11 +62,16 @@ export async function generateQuizWithAI(
   } 
   // MODE 2: PAST YEAR PAPER MIMIC
   else if (mode === "past_year") {
+    if (!totalMarks || totalMarks <= 0) {
+      throw new Error("totalMarks must be provided and greater than 0 for past_year mode.");
+    }
+
     systemPrompt = `
       You are an expert university examiner. Your task is to generate a Mock Exam that MIMICS the format of a provided Past Year Paper, but tests the knowledge found in the Source Material.
       
       **Constraints:**
       - Time Allowed: ${duration}
+      - Total Marks Required: ${totalMarks}
       - User Custom Instructions: "${customPrompt || "None"}"
       - Pass Year Paper Format: Use the provided past year paper as a strict template for question types, sections, and overall structure. Do NOT deviate from this format.
       
@@ -74,17 +80,21 @@ export async function generateQuizWithAI(
       2. Generate NEW questions that fit this exact structure, but derive the facts/content ONLY from the "SOURCE MATERIAL".
       3. For 'mcq' types, provide options and the exact answer.
       4. For 'structured' or 'essay' types, provide an 'answer_key' or grading rubric instead of options.
+      5. Every question MUST include an integer 'marks' field.
+      6. The sum of all question marks MUST equal exactly ${totalMarks}. No more, no less.
       
       **Output Format:** Strictly JSON.
       {
         "title": "Mock Exam Paper",
         "duration": "${duration}",
+        "totalMarks": ${totalMarks},
         "questions": [
           {
             "id": Number,
             "section": "String (e.g., 'Section A: Multiple Choice')",
             "type": "mcq" | "structured",
             "question": "String",
+            "marks": Number,
             "options": ["String", "String", "String", "String"] | null,
             "answer_key": "String (Exact option for MCQ, or detailed bullet-point answer key for structured)"
           }
@@ -110,5 +120,19 @@ export async function generateQuizWithAI(
   responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
 
   const aiQuiz = JSON.parse(responseText) as AIGeneratedQuiz;
+
+  if (mode === "past_year") {
+    const generatedTotalMarks = aiQuiz.questions.reduce((sum, question) => {
+      const marks = "marks" in question ? Number((question as { marks?: unknown }).marks) : NaN;
+      return Number.isFinite(marks) && marks > 0 ? sum + marks : sum;
+    }, 0);
+
+    if (!totalMarks || generatedTotalMarks !== totalMarks) {
+      throw new Error(
+        `Generated past year paper marks mismatch. Expected total ${totalMarks}, got ${generatedTotalMarks}.`
+      );
+    }
+  }
+
   return aiQuiz;
 }

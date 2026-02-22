@@ -91,18 +91,51 @@ export async function POST(req: Request) {
       aiInstruction = "Analyze this text and format it as clean Markdown.";
     }
 
-    // Generate content
-    const result = await reasoningModel.generateContent([
-      {
-        fileData: {
-          mimeType: fileStatus.mimeType,
-          fileUri: fileStatus.uri,
+    // Generate content with RECITATION-safe fallback
+    let responseText = "";
+    try {
+      const result = await reasoningModel.generateContent([
+        {
+          fileData: {
+            mimeType: fileStatus.mimeType,
+            fileUri: fileStatus.uri,
+          },
         },
-      },
-      { text: aiInstruction },
-    ]);
+        { text: aiInstruction },
+      ]);
 
-    const responseText = result.response.text();
+      responseText = result.response.text();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isRecitationBlocked = message.includes("RECITATION");
+
+      if (!isRecitationBlocked) {
+        throw error;
+      }
+
+      const fallbackInstruction = `
+      The prior extraction attempt was blocked due to recitation policy.
+      Produce SAFE study notes by PARAPHRASING this document.
+      Rules:
+      - Do not copy long verbatim passages.
+      - Summarize key points, definitions, formulas, and section structure.
+      - If this is an exam paper, list the exam structure and question themes.
+      - Output clean Markdown.
+      `;
+
+      const fallbackResult = await reasoningModel.generateContent([
+        {
+          fileData: {
+            mimeType: fileStatus.mimeType,
+            fileUri: fileStatus.uri,
+          },
+        },
+        { text: fallbackInstruction },
+      ]);
+
+      responseText = fallbackResult.response.text();
+    }
+
     if (!responseText) {
       throw new Error("Empty response from AI model.");
     }
@@ -115,7 +148,18 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error("Upload Error:", error);
-    return NextResponse.json({ error: "Failed to process file" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Failed to process file";
+    const isRecitationBlocked = message.includes("RECITATION");
+
+    return NextResponse.json(
+      {
+        error: isRecitationBlocked
+          ? "Content blocked by model recitation policy."
+          : "Failed to process file",
+        details: message,
+      },
+      { status: isRecitationBlocked ? 422 : 500 }
+    );
   } finally {
     // Cleanup temp file
     if (tempFilePath) {
