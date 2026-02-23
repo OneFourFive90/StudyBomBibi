@@ -76,6 +76,8 @@ export async function processChatbot(
 
     const finalContents = [...formattedHistory, currentTurn];
 
+    // console.log("Calling Gemini with contents:", JSON.stringify(finalContents, null, 2));
+    
     // 5. Call Gemini
     const result = await reasoningModel.generateContent({
       contents: finalContents,

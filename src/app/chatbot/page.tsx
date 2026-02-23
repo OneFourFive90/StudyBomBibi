@@ -76,7 +76,7 @@ export default function ChatbotPage() {
     const fetchFilesAndFolders = async () => {
       try {
         const [filesRes, foldersRes] = await Promise.all([
-          fetch(`/api/files?userId=${userId}`),
+          fetch(`/api/get-files?userId=${userId}`),
           fetch(`/api/folders?action=get-all&userId=${userId}`)
         ]);
 
@@ -121,7 +121,9 @@ export default function ChatbotPage() {
 
     try {
       // Format history for the API (it expects { role, text })
-      const historyForApi = messages.map((msg) => ({
+      // Only send the last 20 messages (10 rounds of user + ai)
+      const recentMessages = messages.slice(-20);
+      const historyForApi = recentMessages.map((msg) => ({
         role: msg.role,
         text: msg.content,
       }));
