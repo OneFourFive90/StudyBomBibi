@@ -28,10 +28,11 @@ export async function POST(req: Request) {
 
     // 4. Convert the raw audio data into a Base64 string so the browser can play it
     const audioBase64 = response.audioContent?.toString("base64");
-
+    const fullAudioString = `data:audio/mp3;base64,${audioBase64}`;
+    
     // 5. Send it back to the frontend
     return NextResponse.json({ 
-      audioUrl: `data:audio/mp3;base64,${audioBase64}` 
+      audioUrl: fullAudioString
     });
 
   } catch (error) {

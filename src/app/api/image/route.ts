@@ -37,10 +37,10 @@ export async function POST(req: Request) {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64Image = buffer.toString("base64");
-
+    const fullImageString = `data:image/png;base64,${base64Image}`;
     // 6. Send it back to the frontend!
     return NextResponse.json({
-      imageUrl: `data:image/png;base64,${base64Image}`,
+      imageUrl: fullImageString,
     });
   } catch (error) {
     console.error("Image Generation Error:", error);
