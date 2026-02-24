@@ -1,51 +1,66 @@
-import { NextResponse } from "next/server";
 import { reasoningModel } from "@/lib/gemini";
+import { AIStudyPlanResponse } from "@/lib/firebase/firestore/study-plan/saveStudyPlanToFirestore";
 
-export async function POST(req: Request) {
-  try {
-    // 1. Get data
-    const body = await req.json();
-    const { 
-      file,           
-      extractText,    
-      days,           
-      hoursPerDay,    
-      formats // ["video", "text", "image"] 
-    } = body;
-    
-    if (!extractText || !Array.isArray(extractText)) {
-      return NextResponse.json({ error: "Invalid Input: 'extractText' is missing." }, { status: 400 });
-    }
+export interface GenerateStudyPlanInput {
+  fileNames: string[];
+  extractedTexts: string[];
+  days: number;
+  hoursPerDay: number;
+  formats: string[]; // ["video", "text", "image"]
+}
 
-    const combinedContext = extractText.map((text: string, index: number) => `
-      --- SOURCE ${index + 1}: ${file[index]} ---
+/**
+ * Generate a study plan using Gemini AI
+ * Extracted from the API route for direct function calls
+ */
+export async function generateStudyPlan(
+  input: GenerateStudyPlanInput
+): Promise<AIStudyPlanResponse> {
+  const { fileNames, extractedTexts, days, hoursPerDay, formats } = input;
+
+  // Validate input
+  if (!extractedTexts || !Array.isArray(extractedTexts) || extractedTexts.length === 0) {
+    throw new Error("Invalid Input: 'extractedTexts' is missing or empty.");
+  }
+
+  // Combine context from all files
+  const combinedContext = extractedTexts
+    .map(
+      (text: string, index: number) => `
+      --- SOURCE ${index + 1}: ${fileNames[index]} ---
       ${text}
-    `).join("\n\n");
+    `
+    )
+    .join("\n\n");
 
-    // 2. Calculate "Depth" Logic
-    const totalHours = days * hoursPerDay;
-    let depthInstruction = "";
-    
-    if (totalHours <= 3) {
-      depthInstruction = "Detailed Overview: Provide comprehensive summaries of key concepts. Do not be brief; explain 'why' and 'how' for every major point.";
-    } else if (totalHours <= 10) {
-      depthInstruction = "In-Depth Analysis: Explain every concept in detail with multiple real-world examples. content should be substantial and suitable for the study level base on the material provide.";
-    } else {
-      depthInstruction = "Master Class: Provide exhaustive theoretical background, extensive case studies, and advanced critical analysis. The content must be highly detailed and rigorous.";
-    }
+  // Calculate "Depth" Logic based on total study hours
+  const totalHours = days * hoursPerDay;
+  let depthInstruction = "";
 
-    //final quiz
-    const finalExamInstruction = days > 1 
+  if (totalHours <= 3) {
+    depthInstruction =
+      "Detailed Overview: Provide comprehensive summaries of key concepts. Do not be brief; explain 'why' and 'how' for every major point.";
+  } else if (totalHours <= 10) {
+    depthInstruction =
+      "In-Depth Analysis: Explain every concept in detail with multiple real-world examples. content should be substantial and suitable for the study level base on the material provide.";
+  } else {
+    depthInstruction =
+      "Master Class: Provide exhaustive theoretical background, extensive case studies, and advanced critical analysis. The content must be highly detailed and rigorous.";
+  }
+
+  // Final exam instruction
+  const finalExamInstruction =
+    days > 1
       ? `CRITICAL: Since the course is ${days} days long, you MUST create a final 'Day ${days}' (which is at last day) titled 'Final Assessment'. 
       This module must contain a 'quiz' activity with 10 challenging questions covering the ENTIRE course. 
       This final assessment is after the quiz for the last day.`
       : "No final exam needed for a 1-day course.";
 
-    // 3. The "Instructional Designer" Prompt
-    const systemPrompt = `
+  // The "Instructional Designer" Prompt
+  const systemPrompt = `
       You are an expert AI Instructional Designer.
       
-      **Goal:** Create a structured study plan for "${file}".
+      **Goal:** Create a structured study plan for "${fileNames.join(", ")}".
       **Context:** Based strictly on the provided text.
       **Constraints:** ${days} Days, ${hoursPerDay} hours per day.
       **Total Intensity:** ${totalHours} hours total -> Strategy: ${depthInstruction}
@@ -108,27 +123,30 @@ export async function POST(req: Request) {
       }
     `;
 
-    // 4. Call Gemini
-    const result = await reasoningModel.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: systemPrompt + "\n\nCONTEXT TO TEACH:\n" + combinedContext }]
-        }
-      ]
-    });
+  // Call Gemini
+  const result = await reasoningModel.generateContent({
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: systemPrompt + "\n\nCONTEXT TO TEACH:\n" + combinedContext },
+        ],
+      },
+    ],
+  });
 
-    let responseText = result.response.text();
-    responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+  let responseText = result.response.text();
+  responseText = responseText
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
 
-    return NextResponse.json(JSON.parse(responseText));
+  const parsed: AIStudyPlanResponse = JSON.parse(responseText);
 
-  } catch (error: unknown) {
-    console.error("Study Plan Error:", error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.json(
-      { error: "Failed to generate plan", details: errorMessage }, 
-      { status: 500 }
-    );
+  // Validate response structure
+  if (!parsed.courseTitle || !parsed.schedule) {
+    throw new Error("Invalid AI response: missing courseTitle or schedule");
   }
+
+  return parsed;
 }

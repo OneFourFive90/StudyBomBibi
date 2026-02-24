@@ -9,7 +9,6 @@ import {
   FirestoreFile,
 } from '@/lib/firebase/userFileManagement/readFiles';
 import { deleteFile } from '@/lib/firebase/userFileManagement/deleteFile';
-import { uploadFile } from '@/lib/firebase/userFileManagement/uploadFile';
 
 // Temporary test user ID (replace with actual auth user ID in production)
 const TEST_USER_ID = 'test-user-123';
@@ -101,16 +100,29 @@ export default function FirebaseTestPage() {
     testStorage();
   }, []);
 
-  // Handle file upload using storage.ts functions
+  // Handle file upload using /api/upload route
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploading(true);
     try {
-      // Use generic uploadFile - it auto-detects file type
-      const result = await uploadFile(TEST_USER_ID, file);
-      alert(`✅ File uploaded!\nHash: ${result.hash}\nURL: ${result.url}`);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', TEST_USER_ID);
+
+      const response = await fetch('/api/upload-file', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      const result = await response.json();
+      alert(`✅ File uploaded and extracted!\nURL: ${result.uploadResult.url}`);
       
       // Refresh file list
       await refreshFiles();
