@@ -6,6 +6,8 @@ import { auth } from "@/lib/firebase/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusToast } from "@/components/ui/status-toast";
+import { useToastMessage } from "@/hooks/use-toast-message";
 import {
   Book,
   FileText,
@@ -60,29 +62,13 @@ interface FileRecord {
   downloadURL: string;
 }
 
-const TEST_USER_ID = "test-user-123";
+interface PendingDeleteAction {
+  id: string;
+  type: "file" | "folder";
+  label: string;
+}
 
-const initialNotes: Material[] = [
-  {
-    id: "note-1",
-    source: "note",
-    type: "Note",
-    title: "React Hooks Cheat Sheet",
-    author: "Self",
-    content: `
-      <h2>React Hooks</h2>
-      <p>Hooks are functions that let you "hook into" React state and lifecycle features from function components.</p>
-      <ul>
-        <li><strong>useState</strong>: Returns a stateful value, and a function to update it.</li>
-        <li><strong>useEffect</strong>: Accepts a function that contains imperative, possibly effectful code.</li>
-        <li><strong>useContext</strong>: Accepts a context object and returns the current context value.</li>
-      </ul>
-      <p>Try selecting some text here to see the smart actions!</p>
-    `,
-    tag: "React",
-    parentId: null,
-  },
-];
+const TEST_USER_ID = "test-user-123";
 
 function mapFileType(mimeType: string): MaterialType {
   if (mimeType === "application/pdf") return "PDF";
@@ -120,7 +106,7 @@ export default function LibraryPage() {
   const [userId, setUserId] = useState(TEST_USER_ID);
   const [allFolders, setAllFolders] = useState<FolderRecord[]>([]);
   const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
-  const [notes, setNotes] = useState<Material[]>(initialNotes);
+  const [notes, setNotes] = useState<Material[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -135,8 +121,11 @@ export default function LibraryPage() {
 
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { toast, showToast, showLoading, clearToast } = useToastMessage();
 
   const currentFolder = allFolders.find((folder) => folder.id === currentFolderId) ?? null;
 
@@ -354,10 +343,9 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFolder = async (folderId: string) => {
-    if (!confirm("Delete folder and all nested content?")) return;
-
     setLoading(true);
     setError("");
+    showLoading("Deleting folder...");
     try {
       const url = new URL("/api/folders", window.location.origin);
       url.searchParams.set("userId", userId);
@@ -374,8 +362,11 @@ export default function LibraryPage() {
       }
       await loadLibraryData(userId);
       setSelectedItem(null);
+      showToast("Folder deleted successfully", "success");
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete folder");
+      const message = deleteError instanceof Error ? deleteError.message : "Failed to delete folder";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
     }
   };
@@ -406,12 +397,24 @@ export default function LibraryPage() {
     setShowAddMenu(false);
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectUploadFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setPendingUploadFile(file);
+    event.target.value = "";
+  };
+
+  const handleConfirmUpload = async () => {
+    const file = pendingUploadFile;
+    if (!file) return;
+
+    const fileName = file.name;
+    setPendingUploadFile(null);
+
     setLoading(true);
     setError("");
+    showLoading(`Uploading ${fileName}...`);
 
     try {
       const formData = new FormData();
@@ -445,11 +448,12 @@ export default function LibraryPage() {
       }
 
       await loadLibraryData(userId);
+      showToast("File uploaded successfully", "success");
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Failed to upload file");
+      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload file";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
-    } finally {
-      event.target.value = "";
     }
   };
 
@@ -488,10 +492,9 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFile = async (fileId: string) => {
-    if (!confirm("Delete this file?")) return;
-
     setLoading(true);
     setError("");
+    showLoading("Deleting file...");
     try {
       const response = await fetch("/api/folders", {
         method: "POST",
@@ -510,19 +513,98 @@ export default function LibraryPage() {
 
       await loadLibraryData(userId);
       setSelectedItem(null);
+      showToast("File deleted successfully", "success");
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Failed to delete file");
+      const message = deleteError instanceof Error ? deleteError.message : "Failed to delete file";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
     }
   };
 
+  const requestDeleteFile = (fileId: string) => {
+    const file = allFiles.find((item) => item.id === fileId);
+    setPendingDelete({
+      id: fileId,
+      type: "file",
+      label: file?.originalName || "this file",
+    });
+  };
+
+  const requestDeleteFolder = (folderId: string) => {
+    const folder = allFolders.find((item) => item.id === folderId);
+    setPendingDelete({
+      id: folderId,
+      type: "folder",
+      label: folder?.name || "this folder",
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    const target = pendingDelete;
+    setPendingDelete(null);
+
+    if (target.type === "file") {
+      await handleDeleteFile(target.id);
+      return;
+    }
+
+    await handleDeleteFolder(target.id);
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
+      <StatusToast toast={toast} onClose={clearToast} />
+
+      {(pendingUploadFile || pendingDelete) && (
+        <div className="fixed inset-0 z-[9997] bg-black/20 backdrop-blur-[1px]" />
+      )}
+
+      {pendingUploadFile && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9998] w-[min(92vw,560px)]">
+          <div className="p-4 border rounded-lg bg-popover shadow-lg flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
+            <div className="text-sm">
+              Ready to upload <strong>{pendingUploadFile.name}</strong>
+              {currentFolder ? ` into ${currentFolder.name}` : " to Root"}.
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => void handleConfirmUpload()} disabled={loading}>
+                Confirm Upload
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setPendingUploadFile(null)} disabled={loading}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9998] w-[min(92vw,560px)]">
+          <div className="p-4 border rounded-lg bg-popover border-destructive/40 shadow-lg flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
+            <div className="text-sm">
+              Delete <strong>{pendingDelete.label}</strong>?
+              {pendingDelete.type === "folder" ? " This includes nested files and subfolders." : " This action cannot be undone."}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()} disabled={loading}>
+                Confirm Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)} disabled={loading}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
         className="hidden"
-        onChange={handleFileUpload}
+        onChange={handleSelectUploadFile}
         accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.markdown,.csv"
       />
 
@@ -649,7 +731,7 @@ export default function LibraryPage() {
                       <Button variant="outline" size="sm" onClick={() => void handleMoveFolder(material.id)}>
                         <FolderInput className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => void handleDeleteFolder(material.id)}>
+                      <Button variant="outline" size="sm" onClick={() => requestDeleteFolder(material.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -660,7 +742,7 @@ export default function LibraryPage() {
                       <Button variant="outline" size="sm" onClick={() => void handleMoveFile(material.id)}>
                         <FolderInput className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => void handleDeleteFile(material.id)}>
+                      <Button variant="outline" size="sm" onClick={() => requestDeleteFile(material.id)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -807,7 +889,7 @@ export default function LibraryPage() {
                   </Button>
                 )}
                 {selectedItem.source === "file" && (
-                  <Button variant="outline" size="sm" onClick={() => void handleDeleteFile(selectedItem.id)}>
+                  <Button variant="outline" size="sm" onClick={() => requestDeleteFile(selectedItem.id)}>
                     Delete
                   </Button>
                 )}

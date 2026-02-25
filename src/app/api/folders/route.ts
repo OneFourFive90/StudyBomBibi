@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
   createFolder,
-  deleteFolder,
   updateFolderName,
   moveFolderToParent,
   getUserFolders,
@@ -13,9 +12,9 @@ import {
 import {
   moveFileToFolder,
   moveFilesToFolder,
+  deleteFileById,
   getFilesByFolder,
   getRootFiles,
-  deleteFilesInFolder,
   deleteFilesInFolderRecursively,
 } from '@/lib/firebase/userFileManagement/fileFolderManagement';
 
@@ -158,6 +157,18 @@ export async function POST(req: Request) {
           success: true,
           movedCount: fileIds.length,
         });
+      }
+
+      case 'delete-file': {
+        const { fileId } = body;
+        if (!fileId) {
+          return NextResponse.json(
+            { error: 'fileId is required' },
+            { status: 400 }
+          );
+        }
+        await deleteFileById(fileId, userId);
+        return NextResponse.json({ success: true });
       }
 
       default:

@@ -76,6 +76,33 @@ export async function moveFilesToFolder(
 }
 
 /**
+ * Delete a single file with ownership validation
+ */
+export async function deleteFileById(
+  fileId: string,
+  ownerId: string
+): Promise<void> {
+  const fileRef = doc(db, 'files', fileId);
+  const fileDoc = await getDoc(fileRef);
+
+  if (!fileDoc.exists()) {
+    throw new Error('File not found');
+  }
+
+  const fileData = fileDoc.data();
+  if (fileData.ownerId !== ownerId) {
+    throw new Error('Unauthorized: File does not belong to this user');
+  }
+
+  const storagePath = fileData.storagePath as string | undefined;
+  if (!storagePath) {
+    throw new Error('File storage path is missing');
+  }
+
+  await deleteFile(fileId, storagePath);
+}
+
+/**
  * Get all files in a specific folder
  */
 export async function getFilesByFolder(
