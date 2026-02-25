@@ -11,7 +11,8 @@ import {
   Timestamp,
   getDoc,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getMetadata, ref, updateMetadata } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { getFolder, getSubfolders } from '../firestore/folderManagement';
 import { deleteFile } from './deleteFile';
 
@@ -73,6 +74,87 @@ export async function moveFilesToFolder(
     moveFileToFolder(fileId, folderId, ownerId)
   );
   await Promise.all(promises);
+}
+
+/**
+ * Rename a file with ownership validation
+ */
+export async function updateFileName(
+  fileId: string,
+  ownerId: string,
+  newName: string
+): Promise<void> {
+  const trimmedName = newName.trim();
+  if (!trimmedName) {
+    throw new Error('File name is required');
+  }
+
+  const fileRef = doc(db, 'files', fileId);
+  const fileDoc = await getDoc(fileRef);
+
+  if (!fileDoc.exists()) {
+    throw new Error('File not found');
+  }
+
+  const fileData = fileDoc.data();
+  if (fileData.ownerId !== ownerId) {
+    throw new Error('Unauthorized: File does not belong to this user');
+  }
+
+  const storagePath = fileData.storagePath as string | undefined;
+
+  await updateDoc(fileRef, {
+    originalName: trimmedName,
+    updatedAt: Timestamp.now(),
+  });
+
+  if (!storagePath) {
+    return;
+  }
+
+  try {
+    const storageRef = ref(storage, storagePath);
+    const currentMetadata = await getMetadata(storageRef);
+    const existingCustomMetadata = currentMetadata.customMetadata || {};
+
+    await updateMetadata(storageRef, {
+      customMetadata: {
+        ...existingCustomMetadata,
+        originalName: trimmedName,
+      },
+    });
+  } catch (error) {
+    throw new Error(
+      `File renamed in Firestore, but failed to update Storage metadata: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Delete a single file with ownership validation
+ */
+export async function deleteFileById(
+  fileId: string,
+  ownerId: string
+): Promise<void> {
+  const fileRef = doc(db, 'files', fileId);
+  const fileDoc = await getDoc(fileRef);
+
+  if (!fileDoc.exists()) {
+    throw new Error('File not found');
+  }
+
+  const fileData = fileDoc.data();
+  if (fileData.ownerId !== ownerId) {
+    throw new Error('Unauthorized: File does not belong to this user');
+  }
+
+  const storagePath = fileData.storagePath as string | undefined;
+  if (!storagePath) {
+    throw new Error('File storage path is missing');
+  }
+
+  await deleteFile(fileId, storagePath);
 }
 
 /**

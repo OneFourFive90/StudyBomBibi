@@ -56,7 +56,7 @@ export default function DashboardLayout({
               <Menu className="h-6 w-6" />
               <span className="sr-only">Open sidebar</span>
             </button>
-            <span className="font-semibold text-lg truncate">Study Kaw Kaw</span>
+            <span className="font-semibold text-lg truncate">StudyBomBibi</span>
           </div>
           {/* ThemeToggle is visible here on mobile as a convenient location */}
           <div className="block md:hidden">

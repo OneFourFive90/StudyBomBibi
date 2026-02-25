@@ -13,7 +13,7 @@ const sidebarNavItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Study Planner",
+    title: "Personalized Learning System",
     href: "/study-planner",
     icon: BookOpen,
   },
