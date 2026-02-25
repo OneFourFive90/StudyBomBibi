@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle, Clock, FileText, Sparkles } from "lucide-react";
+import { CheckCircle, Clock, Sparkles } from "lucide-react";
 import Link from "next/link"; // Import Link component
 
 export default function ExamPrepPage() {

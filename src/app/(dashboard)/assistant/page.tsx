@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, CardTitle, CardHeader, CardContent } from "@/components/ui/card";
-import { Send, Bot, User, Library, FileText, Check, X, Paperclip, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar } from "lucide-react";
+import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -123,13 +123,16 @@ export default function AssistantPage() {
   const [sessions, setSessions] = useState<ChatSession[]>(MOCK_SESSIONS);
   const [currentSessionId, setCurrentSessionId] = useState<string>("session-1");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const nextSessionIdRef = useRef(3);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
   const messages = currentSession.messages;
 
   const handleNewChat = () => {
+    const nextSessionId = `session-${nextSessionIdRef.current}`;
+    nextSessionIdRef.current += 1;
     const newSession: ChatSession = {
-      id: `session-${Date.now()}`,
+      id: nextSessionId,
       title: "New Chat",
       createdAt: new Date(),
       messages: [
@@ -335,7 +338,7 @@ export default function AssistantPage() {
         </div>
         
         <Card className="flex-1 flex flex-col p-4 overflow-hidden relative">
-            <div className="flex-1 overflow-y-a uto space-y-4 pr-2 pb-4">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2 pb-4">
             {messages.map((msg, index) => (
                 <div 
                 key={index} 

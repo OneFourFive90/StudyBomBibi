@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, CheckCircle, Clock, Save, BookOpen, ExternalLink, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
 
 // Mock data for the exam
 const MOCK_EXAM = {
@@ -57,7 +56,6 @@ const MOCK_EXAM = {
 };
 
 export default function ExamPage() {
-  const params = useParams();
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(MOCK_EXAM.duration * 60);
   const [isSubmitted, setIsSubmitted] = useState(false);

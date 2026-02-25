@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, Sparkles, Clock, CheckCircle2, PlayCircle } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, useEffect } from "react";
 
 // Types
 type StudyTask = {
@@ -108,15 +107,8 @@ const MOCK_PLANS: Plan[] = [
 
 export default function StudyPlanDetailPage() {
   const params = useParams();
-  const [plan, setPlan] = useState<Plan | null>(null);
-
-  useEffect(() => {
-    // Simulate fetching plan by ID
-    const foundPlan = MOCK_PLANS.find(p => p.id === params.id);
-    if (foundPlan) {
-      setPlan(foundPlan);
-    }
-  }, [params.id]);
+  const planId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const plan = MOCK_PLANS.find((p) => p.id === planId) ?? null;
 
   if (!plan) {
     return (
