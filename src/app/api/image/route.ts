@@ -2,43 +2,61 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    // 1. We now expect the full 'imagePrompt' from your frontend/Gemini
     const { imagePrompt } = await req.json();
 
     if (!imagePrompt) {
       return NextResponse.json({ error: "Missing imagePrompt" }, { status: 400 });
     }
+    const sanitizedPrompt = imagePrompt.replace(/'/g, "\\'");
 
-    // 2. Use the AI's prompt directly! 
-    // I added a tiny quality booster at the end to make it look like a textbook diagram, 
-    const optimizedPrompt = `${imagePrompt}, highly detailed educational illustration, textbook quality, 4k.`;
+    // 1. Prompt Engineering: Use the sanitizedPrompt here!
+    const optimizedPrompt = `${sanitizedPrompt}, highly detailed educational presentation slide, 16:9 aspect ratio, clear and legible typography, professional layout.`;
+   
+    // 2. The Hugging Face Endpoint
+const url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
 
-    // 3. The Cloudflare Workers AI Endpoint
-    const model = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
-    const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`;
-
-    // 4. Call Cloudflare API
+    // 3. Call Hugging Face API
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt: optimizedPrompt }),
+      // IMPORTANT: We now pass exact 16:9 pixel dimensions in the "parameters" object!
+      body: JSON.stringify({ 
+        inputs: optimizedPrompt,
+        parameters: {
+          width: 1024, // 16
+          height: 576  // 9
+        }
+      }), 
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Cloudflare Error:", errorText);
-      return NextResponse.json({ error: "Cloudflare API failed", details: errorText }, { status: 500 });
+      console.error("Hugging Face Error:", errorText);
+      return NextResponse.json({ error: "Hugging Face API failed", details: errorText }, { status: 500 });
     }
 
-    // 5. Convert the image to Base64
+    // 4. Convert the image to Base64
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64Image = buffer.toString("base64");
-    const fullImageString = `data:image/png;base64,${base64Image}`;
-    // 6. Send it back to the frontend!
+
+    // ==========================================
+    // 🌟 5. CREATE THE FULL STRING VARIABLE
+    // ==========================================
+    const fullImageString = `data:image/jpeg;base64,${base64Image}`;
+
+    // ==========================================
+    // 🛑 FRIEND PASTES HER FIREBASE CODE HERE 🛑
+    // ==========================================
+    // Example:
+    // const storageRef = ref(storage, 'slides/lesson_1.jpg');
+    // await uploadString(storageRef, fullImageString, 'data_url'); 
+    // ==========================================
+
+    // 6. Send it back to the frontend
     return NextResponse.json({
       imageUrl: fullImageString,
     });
