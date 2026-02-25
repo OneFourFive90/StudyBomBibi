@@ -97,7 +97,7 @@ export default function QuizGeneratorPage() {
         throw new Error("Please enter source material");
       }
 
-      const response = await fetch("/api/ai/generate-quiz", {
+      const response = await fetch("/api/ai-generate-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
