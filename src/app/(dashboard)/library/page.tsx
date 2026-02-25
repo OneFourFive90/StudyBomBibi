@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusToast } from "@/components/ui/status-toast";
+import { RenameModal } from "@/components/ui/rename-modal";
+import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
 import {
   Book,
@@ -68,6 +70,20 @@ interface PendingDeleteAction {
   label: string;
 }
 
+interface PendingRenameAction {
+  id: string;
+  type: "file" | "folder";
+  parentId: string | null;
+  currentName: string;
+  newName: string;
+}
+
+interface PendingMoveAction {
+  id: string;
+  type: "file" | "folder";
+  currentParentId: string | null;
+}
+
 const TEST_USER_ID = "test-user-123";
 
 function mapFileType(mimeType: string): MaterialType {
@@ -123,6 +139,8 @@ export default function LibraryPage() {
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
+  const [pendingRename, setPendingRename] = useState<PendingRenameAction | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast, showToast, showLoading, clearToast } = useToastMessage();
@@ -279,9 +297,9 @@ export default function LibraryPage() {
     }
   };
 
-  const handleRenameFolder = async (folderId: string, currentName: string) => {
-    const newName = prompt("Rename folder", currentName)?.trim();
-    if (!newName || newName === currentName) return;
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    const trimmedName = newName.trim();
+    if (!trimmedName) return;
 
     setLoading(true);
     setError("");
@@ -293,7 +311,7 @@ export default function LibraryPage() {
           action: "rename-folder",
           userId,
           folderId,
-          name: newName,
+          name: trimmedName,
         }),
       });
 
@@ -303,18 +321,16 @@ export default function LibraryPage() {
       }
 
       await loadLibraryData(userId);
+      showToast("Folder name updated successfully", "success");
     } catch (renameError) {
-      setError(renameError instanceof Error ? renameError.message : "Failed to rename folder");
+      const message = renameError instanceof Error ? renameError.message : "Failed to rename folder";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
     }
   };
 
-  const handleMoveFolder = async (folderId: string) => {
-    const options = ["root", ...allFolders.filter((f) => f.id !== folderId).map((f) => `${f.id}:${f.path.join(" /")}`)];
-    const selected = prompt(`Move folder to parent (enter folder id or 'root'):\n${options.join("\n")}`)?.trim();
-    if (!selected) return;
-
-    const targetFolderId = selected === "root" ? null : selected.split(":")[0];
+  const handleMoveFolder = async (folderId: string, targetFolderId: string | null) => {
 
     setLoading(true);
     setError("");
@@ -336,8 +352,11 @@ export default function LibraryPage() {
       }
 
       await loadLibraryData(userId);
+      showToast("Folder moved successfully", "success");
     } catch (moveError) {
-      setError(moveError instanceof Error ? moveError.message : "Failed to move folder");
+      const message = moveError instanceof Error ? moveError.message : "Failed to move folder";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
     }
   };
@@ -457,12 +476,7 @@ export default function LibraryPage() {
     }
   };
 
-  const handleMoveFile = async (fileId: string) => {
-    const options = ["root", ...allFolders.map((f) => `${f.id}:${f.path.join(" /")}`)];
-    const selected = prompt(`Move file to folder (enter folder id or 'root'):\n${options.join("\n")}`)?.trim();
-    if (!selected) return;
-
-    const targetFolderId = selected === "root" ? null : selected.split(":")[0];
+  const handleMoveFile = async (fileId: string, targetFolderId: string | null) => {
 
     setLoading(true);
     setError("");
@@ -485,8 +499,50 @@ export default function LibraryPage() {
 
       await loadLibraryData(userId);
       setSelectedItem(null);
+      showToast("File moved successfully", "success");
     } catch (moveError) {
-      setError(moveError instanceof Error ? moveError.message : "Failed to move file");
+      const message = moveError instanceof Error ? moveError.message : "Failed to move file";
+      setError(message);
+      showToast(message, "error");
+      setLoading(false);
+    }
+  };
+
+  const handleRenameFile = async (fileId: string, currentName: string) => {
+    const trimmedName = currentName.trim();
+    if (!trimmedName) return;
+
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/folders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "rename-file",
+          userId,
+          fileId,
+          name: trimmedName,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to rename file");
+      }
+
+      await loadLibraryData(userId);
+      setSelectedItem((prev) => {
+        if (!prev || prev.source !== "file" || prev.id !== fileId) {
+          return prev;
+        }
+        return { ...prev, title: trimmedName };
+      });
+      showToast("File renamed successfully", "success");
+    } catch (renameError) {
+      const message = renameError instanceof Error ? renameError.message : "Failed to rename file";
+      setError(message);
+      showToast(message, "error");
       setLoading(false);
     }
   };
@@ -540,6 +596,115 @@ export default function LibraryPage() {
     });
   };
 
+  const requestRenameFolder = (folderId: string, currentName: string) => {
+    const folder = allFolders.find((item) => item.id === folderId);
+    if (!folder) return;
+
+    setPendingRename({
+      id: folderId,
+      type: "folder",
+      parentId: folder.parentFolderId,
+      currentName,
+      newName: currentName,
+    });
+  };
+
+  const requestRenameFile = (fileId: string, currentName: string) => {
+    const file = allFiles.find((item) => item.id === fileId);
+    if (!file) return;
+
+    setPendingRename({
+      id: fileId,
+      type: "file",
+      parentId: file.folderId,
+      currentName,
+      newName: currentName,
+    });
+  };
+
+  const requestMoveFile = (fileId: string) => {
+    const file = allFiles.find((item) => item.id === fileId);
+    if (!file) return;
+
+    setPendingMove({
+      id: fileId,
+      type: "file",
+      currentParentId: file.folderId,
+    });
+  };
+
+  const requestMoveFolder = (folderId: string) => {
+    const folder = allFolders.find((item) => item.id === folderId);
+    if (!folder) return;
+
+    setPendingMove({
+      id: folderId,
+      type: "folder",
+      currentParentId: folder.parentFolderId,
+    });
+  };
+
+  const getBlockedFolderIds = (): string[] => {
+    if (!pendingMove || pendingMove.type !== "folder") {
+      return [];
+    }
+
+    const blocked = new Set<string>([pendingMove.id]);
+    const queue = [pendingMove.id];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      if (!currentId) continue;
+
+      const children = allFolders.filter((folder) => folder.parentFolderId === currentId);
+      for (const child of children) {
+        if (!blocked.has(child.id)) {
+          blocked.add(child.id);
+          queue.push(child.id);
+        }
+      }
+    }
+
+    return Array.from(blocked);
+  };
+
+  const handleConfirmMove = async (destinationFolderId: string | null) => {
+    if (!pendingMove) return;
+
+    const moveTarget = pendingMove;
+    setPendingMove(null);
+
+    if (moveTarget.type === "file") {
+      await handleMoveFile(moveTarget.id, destinationFolderId);
+      return;
+    }
+
+    if (destinationFolderId === moveTarget.id) {
+      return;
+    }
+
+    await handleMoveFolder(moveTarget.id, destinationFolderId);
+  };
+
+  const handleConfirmRename = async () => {
+    if (!pendingRename) return;
+
+    const { id, type, currentName, newName } = pendingRename;
+    const trimmedName = newName.trim();
+    setPendingRename(null);
+
+    if (!trimmedName || trimmedName === currentName) {
+      return;
+    }
+
+    if (type === "folder") {
+      await handleRenameFolder(id, trimmedName);
+      return;
+    }
+
+    await handleRenameFile(id, trimmedName);
+  };
+
   const handleConfirmDelete = async () => {
     if (!pendingDelete) return;
 
@@ -558,9 +723,53 @@ export default function LibraryPage() {
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
       <StatusToast toast={toast} onClose={clearToast} />
 
-      {(pendingUploadFile || pendingDelete) && (
+      {(pendingUploadFile || pendingDelete || pendingRename || pendingMove) && (
         <div className="fixed inset-0 z-[9997] bg-black/20 backdrop-blur-[1px]" />
       )}
+
+      <RenameModal
+        open={Boolean(pendingRename)}
+        targetType={pendingRename?.type ?? "file"}
+        originalName={pendingRename?.currentName ?? ""}
+        value={pendingRename?.newName ?? ""}
+        existingNames={
+          pendingRename
+            ? [
+                ...allFolders
+                  .filter((folder) => folder.parentFolderId === pendingRename.parentId && folder.id !== pendingRename.id)
+                  .map((folder) => folder.name),
+                ...allFiles
+                  .filter((file) => file.folderId === pendingRename.parentId && file.id !== pendingRename.id)
+                  .map((file) => file.originalName),
+              ]
+            : []
+        }
+        loading={loading}
+        onValueChange={(value) =>
+          setPendingRename((prev) =>
+            prev ? { ...prev, newName: value } : prev
+          )
+        }
+        onConfirm={() => void handleConfirmRename()}
+        onCancel={() => setPendingRename(null)}
+      />
+
+      <MovePickerModal
+        key={pendingMove ? `${pendingMove.type}:${pendingMove.id}:${pendingMove.currentParentId ?? "root"}` : "move-closed"}
+        open={Boolean(pendingMove)}
+        targetType={pendingMove?.type ?? "file"}
+        currentParentId={pendingMove?.currentParentId ?? null}
+        folders={allFolders.map((folder) => ({
+          id: folder.id,
+          name: folder.name,
+          path: folder.path,
+          parentFolderId: folder.parentFolderId,
+        }))}
+        blockedFolderIds={getBlockedFolderIds()}
+        loading={loading}
+        onConfirm={(destinationFolderId) => void handleConfirmMove(destinationFolderId)}
+        onCancel={() => setPendingMove(null)}
+      />
 
       {pendingUploadFile && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9998] w-[min(92vw,560px)]">
@@ -707,8 +916,8 @@ export default function LibraryPage() {
                     {getIcon(material.type)}
                   </div>
                   <div className="flex flex-col min-w-0 flex-1">
-                    <CardTitle className="text-base font-medium leading-none truncate">{material.title}</CardTitle>
-                    <CardDescription className="text-sm mt-1 truncate">{material.author || "Unknown Author"}</CardDescription>
+                    <CardTitle className="text-base font-medium leading-snug break-words line-clamp-2">{material.title}</CardTitle>
+                    <CardDescription className="text-sm mt-1 break-words">{material.author || "Unknown Author"}</CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -717,7 +926,7 @@ export default function LibraryPage() {
                       {material.type}
                     </span>
                     {material.tag && (
-                      <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-primary/10 text-primary truncate max-w-full">
+                      <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-primary/10 text-primary break-all max-w-full">
                         {material.tag}
                       </span>
                     )}
@@ -725,10 +934,10 @@ export default function LibraryPage() {
 
                   {material.source === "folder" && (
                     <div className="flex gap-2 mt-4" onClick={(event) => event.stopPropagation()}>
-                      <Button variant="outline" size="sm" onClick={() => void handleRenameFolder(material.id, material.title)}>
+                      <Button variant="outline" size="sm" onClick={() => requestRenameFolder(material.id, material.title)}>
                         <PenLine className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => void handleMoveFolder(material.id)}>
+                      <Button variant="outline" size="sm" onClick={() => requestMoveFolder(material.id)}>
                         <FolderInput className="h-4 w-4" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => requestDeleteFolder(material.id)}>
@@ -739,7 +948,10 @@ export default function LibraryPage() {
 
                   {material.source === "file" && (
                     <div className="flex gap-2 mt-4" onClick={(event) => event.stopPropagation()}>
-                      <Button variant="outline" size="sm" onClick={() => void handleMoveFile(material.id)}>
+                      <Button variant="outline" size="sm" onClick={() => requestRenameFile(material.id, material.title)}>
+                        <PenLine className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => requestMoveFile(material.id)}>
                         <FolderInput className="h-4 w-4" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => requestDeleteFile(material.id)}>
@@ -800,7 +1012,7 @@ export default function LibraryPage() {
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-3 overflow-hidden">
                 {getIcon(selectedItem.type)}
-                <h2 className="text-xl font-semibold truncate">{selectedItem.title}</h2>
+                <h2 className="text-xl font-semibold break-words">{selectedItem.title}</h2>
               </div>
               <div className="flex gap-1">
                 <Button
@@ -884,7 +1096,12 @@ export default function LibraryPage() {
               </div>
               <div className="flex gap-2">
                 {selectedItem.source === "file" && (
-                  <Button variant="outline" size="sm" onClick={() => void handleMoveFile(selectedItem.id)}>
+                  <Button variant="outline" size="sm" onClick={() => requestRenameFile(selectedItem.id, selectedItem.title)}>
+                    Rename
+                  </Button>
+                )}
+                {selectedItem.source === "file" && (
+                  <Button variant="outline" size="sm" onClick={() => requestMoveFile(selectedItem.id)}>
                     Move
                   </Button>
                 )}

@@ -12,6 +12,7 @@ import {
 import {
   moveFileToFolder,
   moveFilesToFolder,
+  updateFileName,
   deleteFileById,
   getFilesByFolder,
   getRootFiles,
@@ -189,26 +190,35 @@ export async function POST(req: Request) {
 /**
  * PUT: Update folder
  * Body:
- *   - action: 'rename-folder' | 'move-folder'
+ *   - action: 'rename-folder' | 'move-folder' | 'rename-file'
  *   - userId: required
- *   - folderId: required
+ *   - folderId: required for rename-folder and move-folder
+ *   - fileId: required for rename-file
  *   - For rename-folder: name
+ *   - For rename-file: name
  *   - For move-folder: parentFolderId (can be null for root)
  */
 export async function PUT(req: Request) {
   try {
     const body = await req.json();
-    const { action, userId, folderId } = body;
+    const { action, userId, folderId, fileId } = body;
 
-    if (!userId || !action || !folderId) {
+    if (!userId || !action) {
       return NextResponse.json(
-        { error: 'userId, action, and folderId are required' },
+        { error: 'userId and action are required' },
         { status: 400 }
       );
     }
 
     switch (action) {
       case 'rename-folder': {
+        if (!folderId) {
+          return NextResponse.json(
+            { error: 'folderId is required' },
+            { status: 400 }
+          );
+        }
+
         const { name } = body;
         if (!name) {
           return NextResponse.json(
@@ -221,8 +231,35 @@ export async function PUT(req: Request) {
       }
 
       case 'move-folder': {
+        if (!folderId) {
+          return NextResponse.json(
+            { error: 'folderId is required' },
+            { status: 400 }
+          );
+        }
+
         const { parentFolderId } = body;
         await moveFolderToParent(folderId, userId, parentFolderId || null);
+        return NextResponse.json({ success: true });
+      }
+
+      case 'rename-file': {
+        const { name } = body;
+        if (!fileId) {
+          return NextResponse.json(
+            { error: 'fileId is required' },
+            { status: 400 }
+          );
+        }
+
+        if (!name) {
+          return NextResponse.json(
+            { error: 'name is required' },
+            { status: 400 }
+          );
+        }
+
+        await updateFileName(fileId, userId, name);
         return NextResponse.json({ success: true });
       }
 
@@ -303,6 +340,7 @@ Complete REST API for folder & file operations:
 ```json
 { "action": "rename-folder", "userId": "...", "folderId": "...", "name": "NewName" }
 { "action": "move-folder", "userId": "...", "folderId": "...", "parentFolderId": "null-or-id" }
+{ "action": "rename-file", "userId": "...", "fileId": "...", "name": "NewFileName.pdf" }
 ```
 
 **DELETE** - Delete folder:
