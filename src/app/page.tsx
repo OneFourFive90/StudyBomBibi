@@ -49,7 +49,7 @@ export default function Home() {
               <Card>
                 <CardHeader>
                   <BookOpen className="h-10 w-10 mb-2 text-primary" />
-                  <CardTitle>AI Study Planner</CardTitle>
+                  <CardTitle>AI Personalized Learning System</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CardDescription>

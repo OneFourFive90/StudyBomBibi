@@ -116,7 +116,7 @@ export default function StudyPlanDetailPage() {
         <h2 className="text-xl font-semibold">Plan Not Found</h2>
         <p className="text-muted-foreground">The study plan you are looking for does not exist in the mock data.</p>
         <Link href="/study-planner">
-          <Button>Return to Study Planner</Button>
+          <Button>Return to Personalized Learning System</Button>
         </Link>
       </div>
     );
