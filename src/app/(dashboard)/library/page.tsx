@@ -62,6 +62,8 @@ interface FileRecord {
   mimeType: string;
   folderId: string | null;
   downloadURL: string;
+  category?: string;
+  extractedText?: string;
 }
 
 interface PendingDeleteAction {
@@ -105,16 +107,19 @@ function toFolderMaterial(folder: FolderRecord): Material {
 }
 
 function toFileMaterial(file: FileRecord): Material {
+  const isNote = file.category === "note" || file.mimeType === "text/markdown";
+
   return {
     id: file.id,
     source: "file",
-    type: mapFileType(file.mimeType),
+    type: isNote ? "Note" : mapFileType(file.mimeType),
     title: file.originalName,
     author: "Uploaded file",
     tag: file.mimeType,
     parentId: file.folderId,
     downloadURL: file.downloadURL,
     mimeType: file.mimeType,
+    content: isNote ? (file.extractedText || "") : undefined,
   };
 }
 
@@ -138,9 +143,13 @@ export default function LibraryPage() {
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [pendingNewNoteName, setPendingNewNoteName] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
   const [pendingRename, setPendingRename] = useState<PendingRenameAction | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
+  const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+  const [noteBaselineContent, setNoteBaselineContent] = useState("");
+  const activeNoteIdRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast, showToast, showLoading, clearToast } = useToastMessage();
@@ -199,6 +208,101 @@ export default function LibraryPage() {
   useEffect(() => {
     void loadLibraryData(userId);
   }, [userId]);
+
+  useEffect(() => {
+    if (!selectedItem || selectedItem.type !== "Note") {
+      setNoteSaveStatus("idle");
+      setNoteBaselineContent("");
+      activeNoteIdRef.current = null;
+      return;
+    }
+
+    if (activeNoteIdRef.current !== selectedItem.id) {
+      const initialContent = selectedItem.content || "";
+      setNoteBaselineContent(initialContent);
+      setNoteSaveStatus("saved");
+      activeNoteIdRef.current = selectedItem.id;
+    }
+  }, [selectedItem]);
+
+  const saveNoteContent = async (fileId: string, content: string): Promise<boolean> => {
+    try {
+      setNoteSaveStatus("saving");
+      const response = await fetch("/api/notes/update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          fileId,
+          content,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to save note");
+      }
+
+      setAllFiles((prev) =>
+        prev.map((file) =>
+          file.id === fileId
+            ? {
+                ...file,
+                extractedText: content,
+              }
+            : file
+        )
+      );
+      setSelectedItem((prev) => {
+        if (!prev || prev.id !== fileId || prev.type !== "Note") {
+          return prev;
+        }
+        return {
+          ...prev,
+          content,
+        };
+      });
+
+      setNoteSaveStatus("saved");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save note";
+      setNoteSaveStatus("error");
+      setError(message);
+      showToast(message, "error");
+      return false;
+    }
+  };
+
+  const handleSaveCurrentNote = async () => {
+    if (!selectedItem || selectedItem.type !== "Note") return;
+
+    const content = selectedItem.content || "";
+    if (content === noteBaselineContent) return;
+
+    if (selectedItem.source === "file") {
+      const success = await saveNoteContent(selectedItem.id, content);
+      if (!success) return;
+    }
+
+    setNoteBaselineContent(content);
+    setNoteSaveStatus("saved");
+    showToast("Note saved", "success");
+  };
+
+  const handleDiscardCurrentNote = () => {
+    if (!selectedItem || selectedItem.type !== "Note") return;
+
+    const reverted = { ...selectedItem, content: noteBaselineContent };
+    setSelectedItem(reverted);
+    setNotes((prev) => prev.map((item) => (item.id === reverted.id ? reverted : item)));
+
+    if (editorRef.current) {
+      editorRef.current.innerText = noteBaselineContent;
+    }
+
+    setNoteSaveStatus("saved");
+  };
 
   useEffect(() => {
     const handleSelection = () => {
@@ -391,24 +495,60 @@ export default function LibraryPage() {
   };
 
   const handleCreateNote = () => {
-    const noteId = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-
-    const newNote: Material = {
-      id: `note-${noteId}`,
-      source: "note",
-      type: "Note",
-      title: "New Note",
-      parentId: currentFolderId,
-      author: "Me",
-      content: "<p>Start writing...</p>",
-      tag: "Draft",
-    };
-
-    setNotes((prev) => [newNote, ...prev]);
-    setSelectedItem(newNote);
+    setPendingNewNoteName("New Note");
     setShowAddMenu(false);
+  };
+
+  const handleConfirmCreateNote = async () => {
+    const noteName = pendingNewNoteName?.trim();
+    if (!noteName) return;
+
+    setPendingNewNoteName(null);
+    setLoading(true);
+    setError("");
+    showLoading("Creating note...");
+
+    try {
+      const response = await fetch("/api/notes/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          title: noteName,
+          content: "",
+          folderId: currentFolderId,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to create note");
+      }
+
+      const payload = await response.json();
+      await loadLibraryData(userId);
+      if (payload?.note?.id) {
+        setSelectedItem({
+          id: payload.note.id,
+          source: "file",
+          type: "Note",
+          title: payload.note.originalName,
+          author: "Uploaded file",
+          tag: "text/markdown",
+          parentId: payload.note.folderId ?? currentFolderId,
+          downloadURL: payload.note.downloadURL,
+          mimeType: "text/markdown",
+          content: "",
+        });
+      }
+      setNoteSaveStatus("idle");
+      showToast("Note created successfully", "success");
+    } catch (createNoteError) {
+      const message = createNoteError instanceof Error ? createNoteError.message : "Failed to create note";
+      setError(message);
+      showToast(message, "error");
+      setLoading(false);
+    }
   };
 
   const handleUpload = () => {
@@ -719,12 +859,63 @@ export default function LibraryPage() {
     await handleDeleteFolder(target.id);
   };
 
+  const normalizedNewNoteName = (pendingNewNoteName || "").trim().toLowerCase();
+  const isNewNoteNameDuplicate = normalizedNewNoteName.length > 0 && [
+    ...allFolders
+      .filter((folder) => folder.parentFolderId === currentFolderId)
+      .map((folder) => folder.name.trim().toLowerCase()),
+    ...allFiles
+      .filter((file) => file.folderId === currentFolderId)
+      .map((file) => file.originalName.trim().toLowerCase()),
+  ].includes(
+    normalizedNewNoteName.endsWith(".md")
+      ? normalizedNewNoteName
+      : `${normalizedNewNoteName}.md`
+  );
+
   return (
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
       <StatusToast toast={toast} onClose={clearToast} />
 
-      {(pendingUploadFile || pendingDelete || pendingRename || pendingMove) && (
+      {(pendingUploadFile || pendingNewNoteName || pendingDelete || pendingRename || pendingMove) && (
         <div className="fixed inset-0 z-[9997] bg-black/20 backdrop-blur-[1px]" />
+      )}
+
+      {pendingNewNoteName !== null && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
+          <div className="w-[min(92vw,520px)] p-4 border rounded-lg bg-popover shadow-lg flex flex-col gap-3 animate-in fade-in zoom-in-95">
+            <div className="text-sm font-medium">Name your new note</div>
+            <Input
+              autoFocus
+              value={pendingNewNoteName}
+              onChange={(event) => setPendingNewNoteName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !isNewNoteNameDuplicate && pendingNewNoteName.trim()) {
+                  void handleConfirmCreateNote();
+                }
+                if (event.key === "Escape") {
+                  setPendingNewNoteName(null);
+                }
+              }}
+              placeholder="My Notes"
+            />
+            {isNewNoteNameDuplicate && (
+              <p className="text-xs text-destructive">A file/folder with similar name already exists here.</p>
+            )}
+            <div className="flex items-center gap-2 justify-end">
+              <Button size="sm" variant="ghost" onClick={() => setPendingNewNoteName(null)} disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => void handleConfirmCreateNote()}
+                disabled={loading || !pendingNewNoteName.trim() || isNewNoteNameDuplicate}
+              >
+                Create Note
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       <RenameModal
@@ -863,7 +1054,7 @@ export default function LibraryPage() {
                     >
                       <Folder className="h-4 w-4 text-blue-500" /> New Folder
                     </Button>
-                    <Button variant="ghost" className="w-full justify-start gap-2 text-sm" onClick={handleCreateNote}>
+                    <Button variant="ghost" className="w-full justify-start gap-2 text-sm" onClick={() => void handleCreateNote()}>
                       <StickyNote className="h-4 w-4 text-yellow-500" /> New Note
                     </Button>
                     <Button variant="ghost" className="w-full justify-start gap-2 text-sm" onClick={handleUpload}>
@@ -925,11 +1116,6 @@ export default function LibraryPage() {
                     <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground shrink-0">
                       {material.type}
                     </span>
-                    {material.tag && (
-                      <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-primary/10 text-primary break-all max-w-full">
-                        {material.tag}
-                      </span>
-                    )}
                   </div>
 
                   {material.source === "folder" && (
@@ -1039,26 +1225,42 @@ export default function LibraryPage() {
 
             <div className="flex-1 p-6 overflow-y-auto">
               {selectedItem.type === "Note" ? (
-                <div
-                  key={selectedItem.id}
-                  ref={(element) => {
-                    if (element && !element.innerHTML && selectedItem.content) {
-                      element.innerHTML = selectedItem.content;
-                    }
-                    editorRef.current = element;
-                  }}
-                  contentEditable
-                  className="prose dark:prose-invert max-w-none text-base leading-relaxed focus:outline-none min-h-75"
-                  suppressContentEditableWarning
-                  onBlur={(event) => {
-                    const newContent = event.currentTarget.innerHTML;
-                    if (newContent !== selectedItem.content) {
+                <div className="relative min-h-75">
+                  {(!selectedItem.content || selectedItem.content.trim() === "") && (
+                    <p className="absolute left-0 top-0 text-base text-muted-foreground pointer-events-none select-none">
+                      Start writing...
+                    </p>
+                  )}
+                  <div
+                    key={selectedItem.id}
+                    ref={(element) => {
+                      if (element && element.innerText !== (selectedItem.content || "")) {
+                        element.innerText = selectedItem.content || "";
+                      }
+                      editorRef.current = element;
+                    }}
+                    contentEditable
+                    className="prose dark:prose-invert max-w-none text-base leading-relaxed focus:outline-none min-h-75"
+                    suppressContentEditableWarning
+                    onInput={(event) => {
+                      const newContent = event.currentTarget.innerText;
                       const updated = { ...selectedItem, content: newContent };
-                      setNotes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
                       setSelectedItem(updated);
-                    }
-                  }}
-                />
+                      setNotes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+
+                      setNoteSaveStatus(newContent === noteBaselineContent ? "saved" : "unsaved");
+                    }}
+                    onBlur={(event) => {
+                      const newContent = event.currentTarget.innerText;
+                      if (newContent !== selectedItem.content) {
+                        const updated = { ...selectedItem, content: newContent };
+                        setSelectedItem(updated);
+                        setNotes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+                        setNoteSaveStatus(newContent === noteBaselineContent ? "saved" : "unsaved");
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-center space-y-4 text-muted-foreground p-8 border-2 border-dashed rounded-lg">
                   <FileText className="h-16 w-16 opacity-20" />
@@ -1087,14 +1289,50 @@ export default function LibraryPage() {
               <div className="flex items-center gap-2">
                 {selectedItem.type === "Note" ? (
                   <span className="flex items-center gap-1 text-xs">
-                    <span className="w-2 h-2 rounded-full bg-green-500" /> Saved
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        noteSaveStatus === "unsaved"
+                          ? "bg-orange-500"
+                          : noteSaveStatus === "saving"
+                          ? "bg-yellow-500"
+                          : noteSaveStatus === "error"
+                            ? "bg-red-500"
+                            : "bg-green-500"
+                      }`}
+                    />
+                    {noteSaveStatus === "unsaved"
+                      ? "Unsaved"
+                      : noteSaveStatus === "saving"
+                        ? "Saving..."
+                      : noteSaveStatus === "error"
+                        ? "Save failed"
+                        : "Saved"}
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-xs">Read-only</span>
                 )}
-                <span>{selectedItem.tag ? `#${selectedItem.tag}` : ""}</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 justify-end">
+                {selectedItem.type === "Note" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleSaveCurrentNote()}
+                    disabled={loading || (selectedItem.content || "") === noteBaselineContent}
+                  >
+                    Save
+                  </Button>
+                )}
+                {selectedItem.type === "Note" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDiscardCurrentNote}
+                    disabled={loading || (selectedItem.content || "") === noteBaselineContent}
+                  >
+                    Discard
+                  </Button>
+                )}
                 {selectedItem.source === "file" && (
                   <Button variant="outline" size="sm" onClick={() => requestRenameFile(selectedItem.id, selectedItem.title)}>
                     Rename
