@@ -9,34 +9,39 @@ export async function POST(req: Request) {
     if (!imagePrompt) {
       return NextResponse.json({ error: "Missing imagePrompt" }, { status: 400 });
     }
+    const sanitizedPrompt = imagePrompt.replace(/'/g, "\\'");
 
     // Determine if this is for storage or immediate use
     const isForStorage = storagePath && userId;
 
     // 2. Optimize the prompt
-    const optimizedPrompt = `${imagePrompt}, highly detailed educational illustration, textbook quality, 4k.`;
+    const optimizedPrompt = `${imagePrompt}, highly detailed educational presentation slide, 16:9 aspect ratio, clear and legible typography, professional layout.`;
 
-    // 3. The Cloudflare Workers AI Endpoint
-    const model = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
-    const url = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`;
+    // 3. The HuggingFace Endpoint
 
-    // 4. Call Cloudflare API
+    const url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
+
+    // 3. Call Hugging Face API
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ prompt: optimizedPrompt }),
+      // IMPORTANT: We now pass exact 16:9 pixel dimensions in the "parameters" object!
+      body: JSON.stringify({ 
+        inputs: optimizedPrompt,
+        parameters: {
+          width: 1024, // 16
+          height: 576  // 9
+        }
+      }), 
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Cloudflare Error:", errorText);
-      return NextResponse.json(
-        { error: "Cloudflare API failed", details: errorText },
-        { status: 500 }
-      );
+      console.error("Hugging Face Error:", errorText);
+      return NextResponse.json({ error: "Hugging Face API failed", details: errorText }, { status: 500 });
     }
 
     // 5. Convert the image to Buffer
@@ -46,7 +51,7 @@ export async function POST(req: Request) {
     // If no storage path, return Base64 (backward compatibility)
     if (!isForStorage) {
       const base64Image = buffer.toString("base64");
-      const fullImageString = `data:image/png;base64,${base64Image}`;
+      const fullImageString = `data:image/jpeg;base64,${base64Image}`;
       return NextResponse.json({ imageUrl: fullImageString });
     }
 
