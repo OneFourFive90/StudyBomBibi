@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
+import { uploadAssetToStorage } from "@/lib/firebase/storage/uploadAssetToStorage";
 
 export async function POST(req: Request) {
   try {
-    // 1. We now expect the full 'imagePrompt' from your frontend/Gemini
-    const { imagePrompt } = await req.json();
+    // 1. Get parameters
+    const { imagePrompt, storagePath, userId } = await req.json();
 
     if (!imagePrompt) {
       return NextResponse.json({ error: "Missing imagePrompt" }, { status: 400 });
     }
 
-    // 2. Use the AI's prompt directly! 
-    // I added a tiny quality booster at the end to make it look like a textbook diagram, 
+    // Determine if this is for storage or immediate use
+    const isForStorage = storagePath && userId;
+
+    // 2. Optimize the prompt
     const optimizedPrompt = `${imagePrompt}, highly detailed educational illustration, textbook quality, 4k.`;
 
     // 3. The Cloudflare Workers AI Endpoint
@@ -30,20 +33,40 @@ export async function POST(req: Request) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Cloudflare Error:", errorText);
-      return NextResponse.json({ error: "Cloudflare API failed", details: errorText }, { status: 500 });
+      return NextResponse.json(
+        { error: "Cloudflare API failed", details: errorText },
+        { status: 500 }
+      );
     }
 
-    // 5. Convert the image to Base64
+    // 5. Convert the image to Buffer
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const base64Image = buffer.toString("base64");
-    const fullImageString = `data:image/png;base64,${base64Image}`;
-    // 6. Send it back to the frontend!
-    return NextResponse.json({
-      imageUrl: fullImageString,
-    });
+
+    // If no storage path, return Base64 (backward compatibility)
+    if (!isForStorage) {
+      const base64Image = buffer.toString("base64");
+      const fullImageString = `data:image/png;base64,${base64Image}`;
+      return NextResponse.json({ imageUrl: fullImageString });
+    }
+
+    // 6. Upload to Firebase Storage if storagePath provided
+    const downloadUrl = await uploadAssetToStorage(
+      storagePath,
+      buffer,
+      "image/jpeg"
+    );
+
+    return NextResponse.json({ downloadUrl });
+
   } catch (error) {
     console.error("Image Generation Error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Internal Server Error",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

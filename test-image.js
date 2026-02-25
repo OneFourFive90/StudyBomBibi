@@ -7,7 +7,7 @@ async function runImageTest() {
     const response = await fetch('http://localhost:3000/api/image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slideTitle: "Title: Introduction to Network Routing Protocol: ospf, bgp, rip" })
+      body: JSON.stringify({ imagePrompt: "Title: Introduction to Network Routing Protocol: ospf, bgp, rip" })
     });
 
     const data = await response.json();

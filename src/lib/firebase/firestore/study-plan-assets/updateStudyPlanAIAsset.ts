@@ -104,13 +104,14 @@ export async function getAssetById(
 }
 
 /**
- * Update the activity in dailyModule with the asset URL
+ * Update a specific asset URL within an activity
  * Call this after asset is ready to link it back to the activity
  */
 export async function updateActivityAssetUrl(
   planId: string,
   dailyModuleId: string,
   activityIndex: number,
+  assetId: string,
   downloadUrl: string
 ): Promise<void> {
   const moduleRef = doc(db, "plans", planId, "dailyModule", dailyModuleId);
@@ -127,10 +128,59 @@ export async function updateActivityAssetUrl(
     throw new Error(`Activity index ${activityIndex} out of bounds`);
   }
 
-  // Update the specific activity's assetUrl
+  const activity = activities[activityIndex];
+  if (!activity.assets) {
+    throw new Error(`Activity ${activityIndex} has no assets array`);
+  }
+
+  // Update the specific asset's URL
+  const updatedAssets = activity.assets.map((asset: any) =>
+    asset.assetId === assetId ? { ...asset, url: downloadUrl } : asset
+  );
+
+  // Check if all assets in this activity are now ready
+  const allAssetsReady = updatedAssets.every((asset: any) => asset.url);
+  
   activities[activityIndex] = {
-    ...activities[activityIndex],
-    assetUrl: downloadUrl,
+    ...activity,
+    assets: updatedAssets,
+    assetStatus: allAssetsReady ? "ready" : "pending",
+  };
+
+  await updateDoc(moduleRef, { activities });
+}
+
+/**
+ * Mark an activity asset as failed
+ */
+export async function markActivityAssetFailed(
+  planId: string,
+  dailyModuleId: string,
+  activityIndex: number,
+  assetId: string,
+  errorMessage: string
+): Promise<void> {
+  const moduleRef = doc(db, "plans", planId, "dailyModule", dailyModuleId);
+  const moduleDoc = await getDoc(moduleRef);
+
+  if (!moduleDoc.exists()) {
+    throw new Error(`Daily module ${dailyModuleId} not found`);
+  }
+
+  const moduleData = moduleDoc.data();
+  const activities = [...moduleData.activities];
+
+  if (activityIndex >= activities.length) {
+    throw new Error(`Activity index ${activityIndex} out of bounds`);
+  }
+
+  const activity = activities[activityIndex];
+  
+  // Mark the overall activity as failed
+  activities[activityIndex] = {
+    ...activity,
+    assetStatus: "failed",
+    errorMessage,
   };
 
   await updateDoc(moduleRef, { activities });

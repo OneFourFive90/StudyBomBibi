@@ -121,16 +121,52 @@ export async function POST(req: Request) {
 
     console.log(`[StudyPlan] Saved plan ${saveResult.planId} with ${saveResult.dailyModuleIds.length} modules`);
 
-    // ============ STEP 4: RETURN RESULT ============
-    return NextResponse.json({
+    // ============ STEP 4: GENERATE AI ASSETS ============
+    let assetResults = null;
+    if (saveResult.pendingAssetIds.length > 0) {
+      console.log(`[StudyPlan] Starting asset generation for ${saveResult.pendingAssetIds.length} assets...`);
+      
+      try {
+        const assetResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/study-plan/assets/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            planId: saveResult.planId,
+            userId: ownerId,
+          }),
+        });
+
+        if (assetResponse.ok) {
+          assetResults = await assetResponse.json();
+          console.log(`[StudyPlan] Asset generation completed: ${assetResults.successCount}/${assetResults.processed} successful`);
+        } else {
+          console.warn(`[StudyPlan] Asset generation failed: ${assetResponse.statusText}`);
+        }
+      } catch (assetError) {
+        console.warn(`[StudyPlan] Asset generation error:`, assetError);
+        // Don't fail the whole request if asset generation fails
+      }
+    }
+
+    // ============ STEP 5: RETURN RESULT ============
+    const response = {
       success: true,
       planId: saveResult.planId,
       courseTitle: aiStudyPlan.courseTitle,
       totalDays: aiStudyPlan.schedule.length,
       dailyModuleIds: saveResult.dailyModuleIds,
-      pendingAssets: saveResult.pendingAssetIds.length,
-      message: `Study plan created successfully. ${saveResult.pendingAssetIds.length} assets pending generation.`,
-    });
+      assets: {
+        totalAssets: saveResult.pendingAssetIds.length,
+        generated: assetResults?.successCount || 0,
+        failed: assetResults?.failCount || 0,
+        pending: saveResult.pendingAssetIds.length - (assetResults?.processed || 0),
+      },
+      message: assetResults 
+        ? `Study plan created with ${assetResults.successCount}/${saveResult.pendingAssetIds.length} assets generated successfully.`
+        : `Study plan created successfully. ${saveResult.pendingAssetIds.length} assets pending generation.`,
+    };
+
+    return NextResponse.json(response);
 
   } catch (error: unknown) {
     console.error("[StudyPlan] Error:", error);
