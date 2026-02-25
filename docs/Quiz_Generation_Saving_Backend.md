@@ -10,8 +10,8 @@ The quiz system has two main phases:
 
 | User Action | API Called | Purpose |
 |---|---|---|
-| Click "Generate Quiz" | `POST /api/ai/generate-quiz` | Create preview |
-| Click "Regenerate" | `POST /api/ai/generate-quiz` | New preview (browser memory only) |
+| Click "Generate Quiz" | `POST /api/ai-generate-quiz` | Create preview |
+| Click "Regenerate" | `POST /api/ai-generate-quiz` | New preview (browser memory only) |
 | Click "Save Quiz" | `POST /api/quizzes/save` | Persist to Firestore |
 | Click "Discard" | None | Clear browser state |
 | Open quiz viewer | Loads from Firestore | Display saved quiz |
@@ -24,13 +24,13 @@ The quiz system has two main phases:
 ```
 User Form
     ↓
-POST /api/ai/generate-quiz
+POST /api/ai-generate-quiz
     ↓ (raw AI response)
 Transform → calculate score
     ↓ (Firestore format)
 Frontend Preview
     ↓
-[Regenerate] → POST /api/ai/generate-quiz again
+[Regenerate] → POST /api/ai-generate-quiz again
 [Discard] → Clear state
 [Save] → POST /api/quizzes/save
     ↓
@@ -43,7 +43,7 @@ Quiz Viewer loads from Firestore
 
 ## Key Design Decisions
 
-1. **Transform in `/api/ai/generate-quiz`** - Preview and saved quiz use same format
+1. **Transform in `/api/ai-generate-quiz`** - Preview and saved quiz use same format
 2. **No Firestore pollution** - Only intentional saves are persisted
 3. **Stateless generation** - Each regenerate is independent
 4. **Pre-calculated scores** - Score totals computed at generation time
@@ -53,7 +53,7 @@ Quiz Viewer loads from Firestore
 
 ## API Endpoints
 
-### 1. `POST /api/ai/generate-quiz` - Generate Quiz Preview
+### 1. `POST /api/ai-generate-quiz` - Generate Quiz Preview
 **What triggers it:** User fills form and clicks "Generate Quiz" button
 
 **Input:**
