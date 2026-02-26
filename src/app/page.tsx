@@ -15,9 +15,6 @@ export default function Home() {
           <Link className="text-sm font-medium hover:underline underline-offset-4" href="/login">
             Login
           </Link>
-          <Link className="text-sm font-medium hover:underline underline-offset-4" href="/register">
-            Register
-          </Link>
         </nav>
       </header>
       <main className="flex-1">
@@ -33,11 +30,8 @@ export default function Home() {
                 </p>
               </div>
               <div className="space-x-4">
-                <Link href="/dashboard">
+                <Link href="/login">
                   <Button className="h-11 px-8">Get Started</Button>
-                </Link>
-                <Link href="/register">
-                  <Button variant="outline" className="h-11 px-8">Sign Up</Button>
                 </Link>
               </div>
             </div>

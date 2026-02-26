@@ -1,13 +1,18 @@
+"use client";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen, GraduationCap, Library, Clock } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-           <p className="text-muted-foreground mt-2">Welcome back! Here&apos;s an overview of your study progress.</p>
+           <p className="text-muted-foreground mt-2">Welcome back, {user?.displayName || "Student"}! Here&apos;s an overview of your study progress.</p>
         </div>
       </div>
       

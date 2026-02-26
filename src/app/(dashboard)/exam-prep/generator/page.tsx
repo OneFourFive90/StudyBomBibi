@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,9 @@ import { ArrowLeft, Clock, FileText, RefreshCw, Save, Upload, Library, X, Check,
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/context/AuthContext";
 
-// Mock Library Data
+// Mock Library Data (Fallback)
 const MOCK_LIBRARY_FILES = [
   { id: "lib1", name: "Lecture 1: React Fundamentals.pdf", type: "PDF" },
   { id: "lib2", name: "Advanced State Management.docx", type: "DOCX" },
@@ -50,13 +51,23 @@ interface SelectedFile {
   fileObject?: File; // Only for uploads
 }
 
+interface LibraryFile {
+  id: string;
+  name: string;
+  type: string;
+}
+
 export default function GeneratorPage() {
+  const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
 
   // Form State
   const [mode, setMode] = useState<"quiz" | "paper">("paper");
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
+  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   
@@ -81,7 +92,32 @@ export default function GeneratorPage() {
     });
   };
 
-  const toggleLibraryFile = (file: typeof MOCK_LIBRARY_FILES[0]) => {
+  useEffect(() => {
+    if (isLibraryOpen && user && libraryFiles.length === 0) {
+      const fetchLibraryFiles = async () => {
+        setIsLoadingLibrary(true);
+        try {
+          const res = await fetch(`/api/get-files?userId=${user.uid}`);
+          if (res.ok) {
+            const data = await res.json();
+            const files = data.files.map((f: any) => ({
+              id: f.id,
+              name: f.originalName,
+              type: f.mimeType.split('/').pop()?.toUpperCase() || "FILE"
+            }));
+            setLibraryFiles(files);
+          }
+        } catch (error) {
+          console.error("Failed to fetch library files", error);
+        } finally {
+          setIsLoadingLibrary(false);
+        }
+      };
+      fetchLibraryFiles();
+    }
+  }, [isLibraryOpen, user, libraryFiles.length]);
+
+  const toggleLibraryFile = (file: LibraryFile) => {
     setSelectedFiles(prev => {
       const exists = prev.find(f => f.id === file.id);
       if (exists) {
@@ -559,7 +595,9 @@ export default function GeneratorPage() {
                         ))}
                     </div>
                   )
-                ) : isGenerating ? (
+               isLoadingLibrary ? (
+                <div className="flex justify-center p-4">Loading...</div>
+              ) : (libraryFiles.length > 0 ? libraryFiles : MOCK_LIBRARY_FILES)? (
                     <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-4">
                         <RefreshCw className="h-10 w-10 animate-spin text-primary" />
                         <p>Analyzing materials and generating {mode === "paper" ? "questions" : "quiz"}...</p>

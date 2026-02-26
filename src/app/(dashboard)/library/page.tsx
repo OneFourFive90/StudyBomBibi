@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase/firebase";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,8 +90,6 @@ interface PendingMoveAction {
 
 type DocumentPreviewKind = "none" | "pdf" | "image" | "text" | "web";
 
-const TEST_USER_ID = "test-user-123";
-
 function mapFileType(mimeType: string): MaterialType {
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType.startsWith("text/")) return "Document";
@@ -127,7 +126,7 @@ function toFileMaterial(file: FileRecord): Material {
 }
 
 export default function LibraryPage() {
-  const [userId, setUserId] = useState(TEST_USER_ID);
+  const { user, userId, loading: authLoading } = useAuth();
   const [allFolders, setAllFolders] = useState<FolderRecord[]>([]);
   const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
   const [notes, setNotes] = useState<Material[]>([]);
@@ -159,6 +158,8 @@ export default function LibraryPage() {
   const activeNoteIdRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
+
   const { toast, showToast, showLoading, clearToast } = useToastMessage();
 
   const currentFolder = allFolders.find((folder) => folder.id === currentFolderId) ?? null;
@@ -174,7 +175,8 @@ export default function LibraryPage() {
     return material.title.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  async function loadLibraryData(activeUserId: string): Promise<void> {
+  async function loadLibraryData(activeUserId: string | null): Promise<void> {
+    if (!activeUserId) return;
     setLoading(true);
     setError("");
     try {
@@ -206,14 +208,16 @@ export default function LibraryPage() {
   }
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      setUserId(firebaseUser?.uid || TEST_USER_ID);
-    });
-    return () => unsub();
-  }, []);
+    // Only redirect if no user AND no test user ID
+    if (!authLoading && !userId) {
+      router.push("/login");
+    }
+  }, [userId, authLoading, router]);
 
   useEffect(() => {
-    void loadLibraryData(userId);
+    if (userId) {
+      void loadLibraryData(userId);
+    }
   }, [userId]);
 
   useEffect(() => {
@@ -456,6 +460,7 @@ export default function LibraryPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
+    if (!userId) return;
 
     setLoading(true);
     setError("");
@@ -486,6 +491,7 @@ export default function LibraryPage() {
   };
 
   const handleRenameFolder = async (folderId: string, newName: string) => {
+    if (!userId) return;
     const trimmedName = newName.trim();
     if (!trimmedName) return;
 
@@ -519,7 +525,7 @@ export default function LibraryPage() {
   };
 
   const handleMoveFolder = async (folderId: string, targetFolderId: string | null) => {
-
+    if (!userId) return;
     setLoading(true);
     setError("");
     try {
@@ -550,6 +556,7 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFolder = async (folderId: string) => {
+    if (!userId) return;
     setLoading(true);
     setError("");
     showLoading("Deleting folder...");
@@ -584,6 +591,7 @@ export default function LibraryPage() {
   };
 
   const handleConfirmCreateNote = async () => {
+    if (!userId) return;
     const noteName = pendingNewNoteName?.trim();
     if (!noteName) return;
 
@@ -649,6 +657,7 @@ export default function LibraryPage() {
   };
 
   const handleConfirmUpload = async () => {
+    if (!userId) return;
     const file = pendingUploadFile;
     if (!file) return;
 
@@ -701,7 +710,7 @@ export default function LibraryPage() {
   };
 
   const handleMoveFile = async (fileId: string, targetFolderId: string | null) => {
-
+    if (!userId) return;
     setLoading(true);
     setError("");
     try {
@@ -733,6 +742,7 @@ export default function LibraryPage() {
   };
 
   const handleRenameFile = async (fileId: string, currentName: string) => {
+    if (!userId) return;
     const trimmedName = currentName.trim();
     if (!trimmedName) return;
 
@@ -772,6 +782,7 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFile = async (fileId: string) => {
+    if (!userId) return;
     setLoading(true);
     setError("");
     showLoading("Deleting file...");
@@ -1106,7 +1117,6 @@ export default function LibraryPage() {
             <p className="text-muted-foreground mt-2 truncate">
               {currentFolderId ? "Folder contents" : "Manage your study materials and notes."}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">User: {userId}</p>
           </div>
 
           <div className="flex items-center gap-2 w-full md:w-auto">

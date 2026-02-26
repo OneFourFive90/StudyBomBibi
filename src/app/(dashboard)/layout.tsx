@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Menu, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function DashboardLayout({
   children,
@@ -12,10 +14,26 @@ export default function DashboardLayout({
 }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { userId, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !userId) {
+      router.push("/login");
+    }
+  }, [userId, loading, router]);
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
   };
+
+  if (loading) {
+    return <div className="flex h-screen w-full items-center justify-center">Loading...</div>;
+  }
+
+  if (!userId) {
+    return null;
+  }
     
   return (
     <div className="flex h-dvh w-full bg-background overflow-hidden relative">
