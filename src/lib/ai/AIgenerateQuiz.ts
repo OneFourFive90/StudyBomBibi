@@ -24,6 +24,8 @@ export async function generateQuizWithAI(
     throw new Error("Missing or invalid source text.");
   }
 
+  const hasPastYearTemplate = Boolean(pastYearText && pastYearText.some((text) => text.trim().length > 0));
+
   const combinedSource = sourceText
     .map((text, i) => `--- SOURCE ${i + 1} ---\n${text}`)
     .join("\n\n");
@@ -33,20 +35,28 @@ export async function generateQuizWithAI(
   // MODE 1: STANDARD MCQ QUIZ
   if (mode === "mcq") {
     systemPrompt = `
-      You are an expert exam writer. Generate a multiple-choice quiz based ONLY on the provided source material.
-      
+      You are an expert exam writer. Your task is to generate a high-quality multiple-choice quiz. 
+      Treat the provided source material as a syllabus. 
+      First, analyze the material to identify the core topics, concepts, and required knowledge. 
+      Then, generate questions that test a deep understanding of these specific topics.
+
       **Constraints:**
       - Number of Questions: ${numQuestions}
+      - Language: STRICTLY ENGLISH. All generated questions, options, answers, explanations, and titles MUST be in English, regardless of the language of the source material.
       - User Custom Instructions: "${customPrompt || "None"}"
       
       **Instructions:**
-      1. Create exactly ${numQuestions} MCQs.
+      1. Create exactly ${numQuestions} MCQs based on the core topics found in the source material.
       2. Ensure one unequivocally correct answer per question.
       3. Include a short explanation for WHY the answer is correct.
+      4. Generate a short, descriptive, and professional title for the quiz based on the core topics.
+      5. Numbering rules are strict:
+        - Set "id" as sequential integers from 1 to ${numQuestions} with no gaps, duplicates, or reordering.
+        - Do NOT include numbering prefixes in "question" text (e.g., avoid "Q1.", "1)", "Question 1").
       
       **Output Format:** Strictly JSON.
       {
-        "title": "Generated MCQ Quiz",
+        "title": "String (A short, descriptive title based on the syllabus/content)",
         "questions": [
           {
             "id": Number,
@@ -67,25 +77,31 @@ export async function generateQuizWithAI(
     }
 
     systemPrompt = `
-      You are an expert university examiner. Your task is to generate a Mock Exam that MIMICS the format of a provided Past Year Paper, but tests the knowledge found in the Source Material.
+      You are an expert university examiner. 
+      Your task is to generate a high-quality Mock Exam based on the provided inputs.
       
       **Constraints:**
       - Time Allowed: ${duration}
       - Total Marks Required: ${totalMarks}
+      - Language: STRICTLY ENGLISH. All generated text MUST be in English, regardless of the language of the source material or past year paper.
       - User Custom Instructions: "${customPrompt || "None"}"
-      - Pass Year Paper Format: Use the provided past year paper as a strict template for question types, sections, and overall structure. Do NOT deviate from this format.
+      - Past Year Paper Template: ${hasPastYearTemplate ? "Use the provided past year paper as a strict template for question types, sections, and overall structure. Do NOT deviate from this format." : "No past year template is provided; design a sensible exam structure (sections and question mix) aligned with the provided prompt/source context."}
       
       **Instructions:**
-      1. Analyze the "PAST YEAR PAPER FORMAT" to understand the structure (e.g., Section A: MCQs, Section B: Short Answer, Section C: Essay).
-      2. Generate NEW questions that fit this exact structure, but derive the facts/content ONLY from the "SOURCE MATERIAL".
-      3. For 'mcq' types, provide options and the exact answer.
+      1. ${hasPastYearTemplate ? "Analyze the 'PAST YEAR PAPER FORMAT' to understand the structure (e.g., Section A: MCQs, Section B: Short Answer, Section C: Essay)." : "Design a clear section structure (e.g., MCQ + structured sections) that fits the requested total marks and duration."}
+      2. Generate NEW questions based on the provided source material and user prompt.
+      3. For 'mcq' types, provide options, the exact answer, and a concise explanation for why that option is correct.
       4. For 'structured' or 'essay' types, provide an 'answer_key' or grading rubric instead of options.
       5. Every question MUST include an integer 'marks' field.
       6. The sum of all question marks MUST equal exactly ${totalMarks}. No more, no less.
+      7. Generate a professional and descriptive title for this Mock Exam based on the source material's subject matter.
+      8. Numbering rules are strict:
+        - Set "id" as sequential integers starting from 1 with no gaps, duplicates, or reordering.
+        - Do NOT include numbering prefixes in "question" text (e.g., avoid "Q1.", "1)", "Question 1").
       
       **Output Format:** Strictly JSON.
       {
-        "title": "Mock Exam Paper",
+        "title": "String (A short, descriptive Mock Exam title based on the source material)",
         "duration": "${duration}",
         "totalMarks": ${totalMarks},
         "questions": [
@@ -96,7 +112,8 @@ export async function generateQuizWithAI(
             "question": "String",
             "marks": Number,
             "options": ["String", "String", "String", "String"] | null,
-            "answer_key": "String (Exact option for MCQ, or detailed bullet-point answer key for structured)"
+            "answer_key": "String (Exact option for MCQ, or detailed bullet-point answer key for structured)",
+            "explanation": "String (Required for MCQ: why the answer_key is correct; optional for structured)"
           }
         ]
       }

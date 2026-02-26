@@ -10,7 +10,7 @@ import { QuizQuestion, QuizScore } from "@/lib/firebase/firestore/saveQuizToFire
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { ownerId, mode, quizData, customTitle } = body;
+    const { ownerId, mode, quizData, customTitle, timerSettings } = body;
 
     // Validate required fields
     if (!ownerId) {
@@ -52,7 +52,17 @@ export async function POST(req: Request) {
       customTitle || quizData.title,
       mode,
       quizData.questions as QuizQuestion[],
-      quizData.score as QuizScore
+      quizData.score as QuizScore,
+      {
+        durationMinutes:
+          timerSettings && typeof timerSettings.durationMinutes === "number"
+            ? timerSettings.durationMinutes
+            : null,
+        timerEnabled:
+          timerSettings && typeof timerSettings.timerEnabled === "boolean"
+            ? timerSettings.timerEnabled
+            : true,
+      }
     );
 
     return NextResponse.json({

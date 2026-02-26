@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Library, BookOpen, GraduationCap, Bot, Sparkles, X, LayoutDashboard, ChevronLeft, ChevronRight, Menu } from "lucide-react";
+import { Library, BookOpen, GraduationCap, Bot, X, LayoutDashboard} from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const sidebarNavItems = [
@@ -53,7 +54,7 @@ export function Sidebar({ className, onLinkClick, isCollapsed = false, onToggleC
         )}
       >
         <Link href="/" className={cn("flex items-center transition-all duration-300", isCollapsed ? "justify-center" : "space-x-2")}>
-          <img src="/favicon.ico" alt="Logo" className="h-6 w-6" />
+          <Image src="/favicon.ico" alt="Logo" width={24} height={24} />
           {!isCollapsed && <span className="text-xl font-bold tracking-tight whitespace-nowrap overflow-hidden">StudyBomBibi</span>}
         </Link>
         

@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ToastVariant = "success" | "error" | "loading";
+export type ToastVariant = "success" | "error" | "loading" | "info";
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+  variant?: "default" | "outline";
+}
 
 export interface ToastMessage {
   message: string;
   variant: ToastVariant;
+  actions?: ToastAction[];
 }
 
 interface UseToastMessageOptions {
   durationMs?: number;
+}
+
+interface ShowToastOptions {
+  actions?: ToastAction[];
 }
 
 export function useToastMessage(options?: UseToastMessageOptions) {
@@ -29,11 +40,11 @@ export function useToastMessage(options?: UseToastMessageOptions) {
   }, [clearExistingTimeout]);
 
   const showToast = useCallback(
-    (message: string, variant: ToastVariant) => {
-      setToast({ message, variant });
+    (message: string, variant: ToastVariant, options?: ShowToastOptions) => {
+      setToast({ message, variant, actions: options?.actions });
       clearExistingTimeout();
 
-      if (variant !== "loading") {
+      if (variant !== "loading" && !options?.actions?.length) {
         timeoutRef.current = setTimeout(() => {
           setToast(null);
           timeoutRef.current = null;

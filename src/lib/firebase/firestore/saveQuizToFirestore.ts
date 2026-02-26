@@ -14,8 +14,8 @@ export interface MCQQuestion {
   marks: number;
   options: string[];
   correctAnswerIndex: number;
-  userSelectedIndex: null;
-  isCorrect: null;
+  userSelectedIndex: number | null;
+  isCorrect: boolean | null;
   explanation: string;
 }
 
@@ -26,8 +26,8 @@ export interface StructuredQuestion {
   question: string;
   marks: number;
   sampleAnswer: string;
-  userAnswerText: null;
-  selfGradedScore: null;
+  userAnswerText: string | null;
+  selfGradedScore: number | null;
 }
 
 // Firestore questions array object
@@ -44,6 +44,8 @@ export interface QuizDocument {
   ownerId: string;
   title: string;
   mode: "mcq" | "past_year";
+  durationMinutes: number | null;
+  timerEnabled: boolean;
   status: "uncomplete" | "completed";
   score: QuizScore;
   questions: QuizQuestion[];
@@ -83,6 +85,7 @@ export interface PastYearModeQuestion {
   marks: number;
   options?: string[] | null;
   answer_key: string;
+  explanation?: string;
 }
 
 export type AIQuestionFormat = MCQModeQuestion | PastYearModeQuestion | AIGeneratedQuestion;
@@ -109,8 +112,27 @@ export function transformAIQuizToFirestore(
     return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
   };
 
+  const normalizeQuestionText = (value: unknown): string => {
+    const text = typeof value === "string" ? value.replace(/\r\n/g, "\n").trim() : "";
+
+    return text
+      .replace(/^\s*(?:q(?:uestion)?\s*)?\d+\s*[.)\-:]\s*/i, "")
+      .replace(/^\s*[a-zA-Z]\s*[.)\-:]\s*/, "")
+      .trim();
+  };
+
+  const getMcqExplanation = (question: { explanation?: string }, answerText: string): string => {
+    const normalized = typeof question.explanation === "string" ? question.explanation.trim() : "";
+    if (normalized) return normalized;
+
+    return answerText
+      ? `The correct answer is ${answerText} based on the provided source context.`
+      : "This is the correct answer based on the provided source context.";
+  };
+
   return aiQuiz.questions.map((question, index) => {
-    const baseId = `q_${question.id || index + 1}`;
+    const baseId = `q_${index + 1}`;
+    const questionText = normalizeQuestionText(question.question);
 
     if (mode === "mcq") {
       // MCQ Mode format: has "answer" field
@@ -124,13 +146,13 @@ export function transformAIQuizToFirestore(
         return {
           id: baseId,
           type: "mcq",
-          question: mcqQuestion.question,
+          question: questionText,
           marks: 1,
           options: mcqQuestion.options,
           correctAnswerIndex: correctAnswerIndex !== -1 ? correctAnswerIndex : 0,
           userSelectedIndex: null,
           isCorrect: null,
-          explanation: mcqQuestion.explanation || "",
+          explanation: getMcqExplanation(mcqQuestion, mcqQuestion.answer),
         } as MCQQuestion;
       }
     } else if (mode === "past_year") {
@@ -145,19 +167,19 @@ export function transformAIQuizToFirestore(
         return {
           id: baseId,
           type: "mcq",
-          question: pastYearQuestion.question,
+          question: questionText,
           marks: normalizePositiveMark((pastYearQuestion as AIGeneratedQuestion).marks, 1),
           options: pastYearQuestion.options as string[],
           correctAnswerIndex: correctAnswerIndex !== -1 ? correctAnswerIndex : 0,
           userSelectedIndex: null,
           isCorrect: null,
-          explanation: "", // Past year format doesn't provide explanation
+          explanation: getMcqExplanation(pastYearQuestion, pastYearQuestion.answer_key),
         } as MCQQuestion;
       } else if (pastYearQuestion.type === "structured") {
         return {
           id: baseId,
           type: "structured",
-          question: pastYearQuestion.question,
+          question: questionText,
           marks: normalizePositiveMark((pastYearQuestion as AIGeneratedQuestion).marks, 3),
           sampleAnswer: pastYearQuestion.answer_key,
           userAnswerText: null,
@@ -170,7 +192,7 @@ export function transformAIQuizToFirestore(
     return {
       id: baseId,
       type: "structured",
-      question: question.question,
+      question: questionText,
       marks: 3,
       sampleAnswer: (question as AIGeneratedQuestion).answer_key || (question as AIGeneratedQuestion).answer || "",
       userAnswerText: null,
@@ -217,14 +239,25 @@ export async function saveQuizToFirestore(
   title: string,
   mode: "mcq" | "past_year",
   questions: QuizQuestion[],
-  score: QuizScore
+  score: QuizScore,
+  options?: {
+    durationMinutes?: number | null;
+    timerEnabled?: boolean;
+  }
 ): Promise<DocumentReference> {
   try {
+    const normalizedDuration =
+      typeof options?.durationMinutes === "number" && Number.isFinite(options.durationMinutes) && options.durationMinutes > 0
+        ? Math.round(options.durationMinutes)
+        : null;
+
     // Create quiz document
     const quizData: QuizDocument = {
       ownerId,
       title: title || "Untitled Quiz",
       mode,
+      durationMinutes: normalizedDuration,
+      timerEnabled: options?.timerEnabled ?? true,
       status: "uncomplete",
       score,
       questions,
@@ -265,5 +298,82 @@ export async function updateQuizStatus(
   } catch (error) {
     console.error("Error updating quiz status:", error);
     throw error;
+  }
+}
+
+/**
+ * Persist quiz answers and mark quiz as completed
+ * @param quizId - The quiz document ID
+ * @param questions - Updated question array including user responses
+ * @param score - Updated score object
+ */
+export async function submitQuizResponses(
+  quizId: string,
+  questions: QuizQuestion[],
+  score: QuizScore
+): Promise<void> {
+  try {
+    const { updateDoc, doc } = await import("firebase/firestore");
+    const quizRef = doc(db, "quizzes", quizId);
+
+    await updateDoc(quizRef, {
+      questions,
+      score,
+      status: "completed",
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error submitting quiz responses:", error);
+    throw new Error(
+      `Failed to submit quiz responses: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+/**
+ * Reset quiz responses and mark quiz as uncomplete for a new attempt
+ * @param quizId - The quiz document ID
+ */
+export async function restartQuizAttempt(quizId: string): Promise<void> {
+  try {
+    const { updateDoc, doc, getDoc } = await import("firebase/firestore");
+    const quizRef = doc(db, "quizzes", quizId);
+    const quizSnap = await getDoc(quizRef);
+
+    if (!quizSnap.exists()) {
+      throw new Error("Quiz not found");
+    }
+
+    const quizData = quizSnap.data() as QuizDocument;
+    const resetQuestions: QuizQuestion[] = quizData.questions.map((question) => {
+      if (question.type === "mcq") {
+        return {
+          ...question,
+          userSelectedIndex: null,
+          isCorrect: null,
+        };
+      }
+
+      return {
+        ...question,
+        userAnswerText: null,
+        selfGradedScore: null,
+      };
+    });
+
+    await updateDoc(quizRef, {
+      questions: resetQuestions,
+      score: {
+        ...quizData.score,
+        mcqScore: 0,
+      },
+      status: "uncomplete",
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error restarting quiz attempt:", error);
+    throw new Error(
+      `Failed to restart quiz attempt: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
   }
 }
