@@ -595,9 +595,7 @@ export default function GeneratorPage() {
                         ))}
                     </div>
                   )
-               isLoadingLibrary ? (
-                <div className="flex justify-center p-4">Loading...</div>
-              ) : (libraryFiles.length > 0 ? libraryFiles : MOCK_LIBRARY_FILES)? (
+                ) : isGenerating ? (
                     <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-4">
                         <RefreshCw className="h-10 w-10 animate-spin text-primary" />
                         <p>Analyzing materials and generating {mode === "paper" ? "questions" : "quiz"}...</p>
