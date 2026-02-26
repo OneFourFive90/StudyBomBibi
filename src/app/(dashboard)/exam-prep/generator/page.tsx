@@ -1,27 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; 
 import { ArrowLeft, Clock, FileText, RefreshCw, Save, Upload, Library, X, Check, FileType, BrainCircuit } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
-
-// Mock Library Data (Fallback)
-const MOCK_LIBRARY_FILES = [
-  { id: "lib1", name: "Lecture 1: React Fundamentals.pdf", type: "PDF" },
-  { id: "lib2", name: "Advanced State Management.docx", type: "DOCX" },
-  { id: "lib3", name: "React Hooks Cheat Sheet.png", type: "IMG" },
-  { id: "lib4", name: "Week 3 - Component Lifecycle.pptx", type: "PPT" },
-  { id: "lib5", name: "Project Guidelines.pdf", type: "PDF" },
-  { id: "lib6", name: "Mid-term Review Notes.txt", type: "TXT" },
-  { id: "lib7", name: "2024 Past Year Paper.pdf", type: "PDF" },
-  { id: "lib8", name: "2023 Mock Exam.docx", type: "DOCX" },
-];
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { getExtractedTextsFromFiles } from "@/lib/firebase/firestore/getExtractedTextFromFile";
+import type { QuizQuestion, QuizScore } from "@/lib/firebase/firestore/saveQuizToFirestore";
+import { StatusToast } from "@/components/ui/status-toast";
+import { useToastMessage } from "@/hooks/use-toast-message";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
+import {
+  isAllowedUploadFileType,
+  SUPPORTED_UPLOAD_TYPES_LABEL,
+  UPLOAD_FILE_ACCEPT,
+} from "@/lib/upload/fileTypePolicy";
 
 interface GeneratedContent {
   title: string;
@@ -32,7 +33,7 @@ interface GeneratedContent {
   sections: {
     title: string;
     questions: {
-      id: number;
+      id: string;
       question: string;
       marks?: number;
       type: "structural" | "essay" | "mcq";
@@ -55,20 +56,170 @@ interface LibraryFile {
   id: string;
   name: string;
   type: string;
+  mimeType: string;
+}
+
+interface GeneratedQuizPayload {
+  mode: "mcq" | "past_year";
+  title: string;
+  duration?: string | null;
+  totalMarks?: number | null;
+  questions: QuizQuestion[];
+  score: QuizScore;
+}
+
+function getFileTypeLabel(fileName: string, mimeType: string): string {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("image/")) return "IMG";
+  if (mimeType === "text/markdown") return "MD";
+  if (mimeType === "text/csv") return "CSV";
+  if (mimeType === "text/plain") return "TXT";
+  const extension = fileName.split(".").pop()?.toUpperCase();
+  return extension || "FILE";
+}
+
+function normalizeGeneratedText(content: string): string {
+  let normalized = content.replace(/\r\n/g, "\n").trim();
+
+  const fencedBlockMatch = normalized.match(/^```(?:markdown|md|text|txt)?\n([\s\S]*?)\n```$/i);
+  if (fencedBlockMatch) {
+    normalized = fencedBlockMatch[1].trim();
+  }
+
+  normalized = normalized
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "")
+    .replace(/\\([`*_#>\-\[\]()])/g, "$1");
+
+  return normalized;
+}
+
+function MarkdownBlock({
+  content,
+  className,
+}: {
+  content: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "prose prose-sm max-w-none break-words text-foreground dark:prose-invert prose-p:text-foreground prose-li:text-foreground prose-strong:text-foreground prose-headings:text-foreground",
+        className
+      )}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="my-2 leading-relaxed">{children}</p>,
+          li: ({ children }) => <li className="my-1">{children}</li>,
+          ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
+          table: ({ children }) => (
+            <div className="my-3 overflow-x-auto rounded-md border">
+              <table className="w-full border-collapse text-sm">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border bg-muted/40 px-2 py-1 text-left align-top whitespace-normal break-words">{children}</th>
+          ),
+          td: ({ children }) => (
+            <td className="border px-2 py-1 align-top whitespace-normal break-words">{children}</td>
+          ),
+        }}
+      >
+        {normalizeGeneratedText(content)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function mapGeneratedQuizToPreview(data: GeneratedQuizPayload): GeneratedContent {
+  if (data.mode === "mcq") {
+    return {
+      title: data.title,
+      type: "quiz",
+      totalQuestions: data.questions.length,
+      sections: [
+        {
+          title: "Multiple Choice Questions",
+          questions: data.questions.map((question) => {
+            if (question.type === "mcq") {
+              const correct = question.options[question.correctAnswerIndex] || "";
+              return {
+                id: question.id,
+                type: "mcq" as const,
+                question: question.question,
+                options: question.options,
+                sampleAnswer: correct,
+              };
+            }
+
+            return {
+              id: question.id,
+              type: "essay" as const,
+              question: question.question,
+              sampleAnswer: question.sampleAnswer,
+            };
+          }),
+        },
+      ],
+    };
+  }
+
+  return {
+    title: data.title,
+    type: "paper",
+    duration: data.duration || undefined,
+    totalMarks: data.totalMarks || undefined,
+    sections: [
+      {
+        title: "Generated Questions",
+        questions: data.questions.map((question) => {
+          if (question.type === "mcq") {
+            const correct = question.options[question.correctAnswerIndex] || "";
+            return {
+              id: question.id,
+              type: "mcq" as const,
+              marks: question.marks,
+              question: question.question,
+              options: question.options,
+              sampleAnswer: correct,
+            };
+          }
+
+          return {
+            id: question.id,
+            type: question.marks >= 10 ? ("essay" as const) : ("structural" as const),
+            marks: question.marks,
+            question: question.question,
+            sampleAnswer: question.sampleAnswer,
+          };
+        }),
+      },
+    ],
+  };
 }
 
 export default function GeneratorPage() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { userId, loading: authLoading } = useAuth();
+  const { toast, showLoading, showToast, clearToast } = useToastMessage();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
+  const [isPreviewSaved, setIsPreviewSaved] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
+  const [generatedPayload, setGeneratedPayload] = useState<GeneratedQuizPayload | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([]);
 
   // Form State
   const [mode, setMode] = useState<"quiz" | "paper">("paper");
-  const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
-  const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([]);
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
-  
+  const [selectedSyllabusFiles, setSelectedSyllabusFiles] = useState<SelectedFile[]>([]);
+  const [selectedReferenceFiles, setSelectedReferenceFiles] = useState<SelectedFile[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [libraryTarget, setLibraryTarget] = useState<"syllabus" | "reference">("syllabus");
   const [prompt, setPrompt] = useState("");
   
   // Paper Specific State
@@ -77,10 +228,49 @@ export default function GeneratorPage() {
 
   // Quiz Specific State
   const [questionCount, setQuestionCount] = useState("20");
+  const [quizTimeLimit, setQuizTimeLimit] = useState("30");
 
-  const [revealedAnswers, setRevealedAnswers] = useState<Set<number>>(new Set());
+  const [revealedAnswers, setRevealedAnswers] = useState<Set<string>>(new Set());
 
-  const toggleAnswer = (id: number) => {
+  const loadLibraryFiles = async (activeUserId: string): Promise<LibraryFile[]> => {
+    setIsLibraryLoading(true);
+    try {
+      const response = await authenticatedFetch(`/api/get-files?userId=${encodeURIComponent(activeUserId)}`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to load library files");
+      }
+
+      const data = await response.json();
+      const files = (data.files || []).map((file: { id: string; originalName: string; mimeType: string }) => ({
+        id: file.id,
+        name: file.originalName,
+        type: getFileTypeLabel(file.originalName, file.mimeType),
+        mimeType: file.mimeType,
+      }));
+
+      setLibraryFiles(files);
+      return files;
+    } finally {
+      setIsLibraryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
+    if (!userId) {
+      setLibraryFiles([]);
+      setErrorMessage("Please sign in to load your library files.");
+      return;
+    }
+
+    void loadLibraryFiles(userId);
+  }, [authLoading, userId]);
+
+  const toggleAnswer = (id: string) => {
     setRevealedAnswers(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -92,182 +282,353 @@ export default function GeneratorPage() {
     });
   };
 
-  useEffect(() => {
-    if (isLibraryOpen && user && libraryFiles.length === 0) {
-      const fetchLibraryFiles = async () => {
-        setIsLoadingLibrary(true);
-        try {
-          const res = await fetch(`/api/get-files?userId=${user.uid}`);
-          if (res.ok) {
-            const data = await res.json();
-            const files = data.files.map((f: any) => ({
-              id: f.id,
-              name: f.originalName,
-              type: f.mimeType.split('/').pop()?.toUpperCase() || "FILE"
-            }));
-            setLibraryFiles(files);
-          }
-        } catch (error) {
-          console.error("Failed to fetch library files", error);
-        } finally {
-          setIsLoadingLibrary(false);
-        }
-      };
-      fetchLibraryFiles();
-    }
-  }, [isLibraryOpen, user, libraryFiles.length]);
+  const getSelectedFilesByTarget = (target: "syllabus" | "reference") => {
+    return target === "syllabus" ? selectedSyllabusFiles : selectedReferenceFiles;
+  };
 
-  const toggleLibraryFile = (file: LibraryFile) => {
-    setSelectedFiles(prev => {
-      const exists = prev.find(f => f.id === file.id);
+  const setSelectedFilesByTarget = (
+    target: "syllabus" | "reference",
+    updater: (prev: SelectedFile[]) => SelectedFile[]
+  ) => {
+    if (target === "syllabus") {
+      setSelectedSyllabusFiles((prev) => updater(prev));
+      return;
+    }
+
+    setSelectedReferenceFiles((prev) => updater(prev));
+  };
+
+  const toggleLibraryFile = (file: LibraryFile, target: "syllabus" | "reference") => {
+    setSelectedFilesByTarget(target, (prev) => {
+      const exists = prev.find((f) => f.id === file.id);
       if (exists) {
-        return prev.filter(f => f.id !== file.id);
-      } else {
-        return [...prev, {
-          id: file.id,
-          name: file.name,
-          type: file.type,
-          origin: "library",
-          role: "source" // Default to source
-        }];
+        return prev.filter((f) => f.id !== file.id);
       }
+
+      return [...prev, {
+        id: file.id,
+        name: file.name,
+        type: file.type,
+        origin: "library",
+        role: target === "syllabus" ? "source" : "reference",
+      }];
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles: SelectedFile[] = Array.from(e.target.files).map(file => ({
-        id: `upload-${Date.now()}-${file.name}`,
-        name: file.name,
-        type: file.name.split('.').pop()?.toUpperCase() || "FILE",
-        origin: "upload",
-        role: "source",
-        fileObject: file
-      }));
-      setSelectedFiles(prev => [...prev, ...newFiles]);
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    target: "syllabus" | "reference"
+  ) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    if (!userId) {
+      const message = "Please sign in before uploading files.";
+      setErrorMessage(message);
+      showToast(message, "error");
+      return;
+    }
+
+    setErrorMessage("");
+    const filesToUpload = Array.from(e.target.files);
+    e.target.value = "";
+
+    const unsupportedFiles = filesToUpload.filter((file) => !isAllowedUploadFileType(file.type, file.name));
+    if (unsupportedFiles.length > 0) {
+      const message = `Unsupported file type: ${unsupportedFiles[0].name}. Allowed: ${SUPPORTED_UPLOAD_TYPES_LABEL}.`;
+      setErrorMessage(message);
+      showToast(message, "error");
+      return;
+    }
+
+    try {
+      showLoading(
+        filesToUpload.length > 1
+          ? `Uploading ${filesToUpload.length} files...`
+          : `Uploading ${filesToUpload[0]?.name || "file"}...`
+      );
+
+      let existingCount = 0;
+      let uploadedCount = 0;
+
+      for (const file of filesToUpload) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("userId", userId);
+
+        const response = await authenticatedFetch("/api/upload-file", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || `Failed to upload ${file.name}`);
+        }
+
+        const payload = await response.json();
+        const alreadyExists = payload?.uploadResult?.alreadyExists === true;
+        if (alreadyExists) {
+          existingCount += 1;
+        } else {
+          uploadedCount += 1;
+        }
+      }
+
+      const refreshedFiles = await loadLibraryFiles(userId);
+      const added = filesToUpload
+        .map((uploaded) =>
+          refreshedFiles.find((item) => item.name === uploaded.name)
+        )
+        .filter((item): item is LibraryFile => Boolean(item));
+
+      if (added.length > 0) {
+        setSelectedFilesByTarget(target, (prev) => {
+          const existingIds = new Set(prev.map((item) => item.id));
+          const toAdd: SelectedFile[] = added
+            .filter((item) => !existingIds.has(item.id))
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              type: item.type,
+              origin: "library",
+              role: target === "syllabus" ? "source" : "reference",
+            }));
+
+          return [...prev, ...toAdd];
+        });
+      }
+
+      if (filesToUpload.length === 1) {
+        showToast(existingCount === 1 ? "File already exists in library" : "File uploaded successfully", "success");
+      } else if (existingCount > 0 && uploadedCount > 0) {
+        showToast(`${uploadedCount} uploaded, ${existingCount} already existed`, "success");
+      } else if (existingCount === filesToUpload.length) {
+        showToast(`${existingCount} files already exist in library`, "success");
+      } else {
+        showToast(`${uploadedCount} files uploaded successfully`, "success");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload files";
+      setErrorMessage(message);
+      showToast(message, "error");
     }
   };
 
-  const updateFileRole = (id: string, role: "source" | "reference") => {
-    setSelectedFiles(prev => prev.map(f => f.id === id ? { ...f, role } : f));
+  const removeFile = (id: string, target: "syllabus" | "reference") => {
+    setSelectedFilesByTarget(target, (prev) => prev.filter((f) => f.id !== id));
   };
 
-  const removeFile = (id: string) => {
-    setSelectedFiles(prev => prev.filter(f => f.id !== id));
-  };
+  const handleGenerate = async () => {
+    if (!userId) {
+      setErrorMessage("Please sign in before generating content.");
+      return;
+    }
 
-  const handleGenerate = () => {
+    setErrorMessage("");
+
+    const sourceFileIds = selectedSyllabusFiles.map((file) => file.id);
+    const referenceFileIds = selectedReferenceFiles.map((file) => file.id);
+    const hasPrompt = prompt.trim().length > 0;
+    const hasAnyInput = sourceFileIds.length > 0 || referenceFileIds.length > 0 || hasPrompt;
+
+    if (!hasAnyInput) {
+      setErrorMessage("Provide at least one input: material file, past year file, or prompt.");
+      return;
+    }
+
     setIsGenerating(true);
-    setTimeout(() => {
-      if (mode === "paper") {
-        setGeneratedContent({
-          title: "Generated Past Year Paper (Mock)",
-          type: "paper",
-          duration: `${timeLimit} minutes`,
-          totalMarks: parseInt(totalMarks),
-          sections: [
-            {
-              title: "Section A: Structural Questions",
-              questions: [
-                {
-                  id: 1,
-                  question: "Explain the concept of 'State' in React components.",
-                  marks: 10,
-                  type: "structural",
-                  sampleAnswer: "State is a built-in React object that is used to contain data or information about the component. A component's state can change over time; whenever it changes, the component re-renders."
-                },
-                {
-                  id: 2,
-                  question: "Differentiate between 'props' and 'state'.",
-                  marks: 10,
-                  type: "structural",
-                  sampleAnswer: "Props are read-only and passed from parent to child. State is local to the component and can be changed within the component."
-                }
-              ]
-            },
-            {
-              title: "Section B: Essay Questions",
-              questions: [
-                {
-                  id: 3,
-                  question: "Discuss the lifecycle methods of a React component.",
-                  marks: 20,
-                  type: "essay",
-                  sampleAnswer: "Lifecycle methods are special methods that automatically get called as your component goes through its lifecycle (Mounting, Updating, Unmounting). Key methods include componentDidMount, componentDidUpdate, and componentWillUnmount (in class components) or useEffect (in functional components)."
-                }
-              ]
-            },
-            {
-              title: "Section C: Past Year Questions (Simulated)",
-              questions: [
-                {
-                  id: 4,
-                  question: "[2023] Explain the significance of Keys in React Lists.",
-                  marks: 5,
-                  type: "structural",
-                  sampleAnswer: "Keys help React identify which items have changed, are added, or are removed. Keys should be given to the elements inside the array to give the elements a stable identity."
-                },
-                {
-                  id: 5,
-                  question: "[2022] Describe the 'Virtual DOM' and how it improves performance.",
-                  marks: 15,
-                  type: "essay",
-                  sampleAnswer: "The Virtual DOM is a lightweight copy of the actual DOM. React uses it to batch updates and only re-render components that have actually changed, minimizing direct manipulation of the slow browser DOM."
-                },
-                {
-                  id: 6,
-                  question: "[2021] Which hook is used for side effects?",
-                  marks: 2,
-                  type: "mcq",
-                  options: ["useState", "useEffect", "usememo", "useCallback"],
-                  sampleAnswer: "useEffect"
-                }
-              ]
-            }
-          ]
-        });
-      } else {
-        // Mock Quiz Generation
-        setGeneratedContent({
-            title: "Generated Mock Quiz",
-            type: "quiz",
-            totalQuestions: parseInt(questionCount),
-            sections: [
-                {
-                    title: "Multiple Choice Questions",
-                    questions: [
-                        {
-                            id: 1,
-                            type: "mcq",
-                            question: "Which hook is used to handle side effects in functional components?",
-                            options: ["useState", "useEffect", "useContext", "useReducer"],
-                            sampleAnswer: "useEffect"
-                        },
-                        {
-                            id: 2,
-                            type: "mcq",
-                            question: "What is the virtual DOM?",
-                            options: ["A direct copy of the real DOM", "A lightweight representation of the real DOM", "A browser extension", "A database for React"],
-                            sampleAnswer: "A lightweight representation of the real DOM"
-                        },
-                        {
-                            id: 3,
-                            type: "mcq",
-                            question: "How do you pass data from parent to child?",
-                            options: ["State", "Props", "Context", "Ref"],
-                            sampleAnswer: "Props"
-                        }
-                    ]
-                }
-            ]
-        });
+    try {
+      let sourceText: string[] = [];
+      if (sourceFileIds.length > 0) {
+        const sourceResults = await getExtractedTextsFromFiles(sourceFileIds, userId);
+        sourceText = sourceResults
+          .map((item) => (item.extractedText || "").trim())
+          .filter((text) => text.length > 0);
       }
+
+      let pastYearText: string[] = [];
+      if (mode === "paper") {
+        if (referenceFileIds.length > 0) {
+          const referenceResults = await getExtractedTextsFromFiles(referenceFileIds, userId);
+          pastYearText = referenceResults
+            .map((item) => (item.extractedText || "").trim())
+            .filter((text) => text.length > 0);
+        }
+      }
+
+      const apiMode = mode === "quiz" ? "mcq" : "past_year";
+      const payload = {
+        mode: apiMode,
+        sourceText,
+        pastYearText: apiMode === "past_year" ? pastYearText : undefined,
+        numQuestions:
+          apiMode === "mcq"
+            ? Math.max(1, Number.parseInt(questionCount, 10) || 20)
+            : Math.max(1, Math.round((Number.parseInt(totalMarks, 10) || 100) / 5)),
+        customPrompt: prompt,
+        duration:
+          apiMode === "past_year"
+            ? `${timeLimit} minutes`
+            : `${Math.max(1, Number.parseInt(quizTimeLimit, 10) || 30)} minutes`,
+        totalMarks: apiMode === "past_year" ? Number.parseInt(totalMarks, 10) || 100 : undefined,
+      };
+
+      const response = await fetch("/api/ai-generate-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Failed to generate quiz");
+      }
+
+      const generated: GeneratedQuizPayload = {
+        mode: apiMode,
+        title: data.title,
+        duration:
+          apiMode === "past_year"
+            ? (data.duration || `${timeLimit} minutes`)
+            : `${Math.max(1, Number.parseInt(quizTimeLimit, 10) || 30)} minutes`,
+        totalMarks: data.totalMarks,
+        questions: data.questions,
+        score: data.score,
+      };
+
+      setGeneratedPayload(generated);
+      setGeneratedContent(mapGeneratedQuizToPreview(generated));
+      setRevealedAnswers(new Set());
+      setIsPreviewSaved(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate content";
+      setErrorMessage(message);
+      setGeneratedPayload(null);
+      setGeneratedContent(null);
+      setIsPreviewSaved(false);
+    } finally {
       setIsGenerating(false);
-    }, 2000);
+    }
   };
 
-  const handleSave = () => {
-    alert("Saved to Exam Prep!");
+  const renderFileSection = (target: "syllabus" | "reference", title: string, description: string) => {
+    const selectedFiles = getSelectedFilesByTarget(target);
+
+    return (
+      <div className="space-y-3">
+        <div>
+          <label className="text-sm font-medium">{title}</label>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLibraryTarget(target);
+              setIsLibraryOpen(true);
+            }}
+            className="flex-1"
+          >
+            <Library className="mr-2 h-4 w-4" />
+            Library
+          </Button>
+          <div className="relative flex-1">
+            <Button variant="outline" className="w-full">
+              <Upload className="mr-2 h-4 w-4" />
+              Upload
+            </Button>
+            <input
+              type="file"
+              multiple
+              accept={UPLOAD_FILE_ACCEPT}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={(event) => {
+                void handleFileUpload(event, target);
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-muted/30 rounded-lg border min-h-[120px] p-2 space-y-2">
+          {selectedFiles.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-6 text-sm">
+              <FileText className="h-7 w-7 mb-2 opacity-50" />
+              <p>No files selected</p>
+            </div>
+          ) : (
+            selectedFiles.map((file) => (
+              <div key={file.id} className="bg-background border rounded-md p-3 text-sm shadow-sm group">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <div className="bg-primary/10 p-1.5 rounded shrink-0">
+                      <FileType className="h-4 w-4 text-primary" />
+                    </div>
+                    <span className="font-medium truncate">{file.name}</span>
+                  </div>
+                  <button
+                    onClick={() => removeFile(file.id, target)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const handleSave = async () => {
+    if (!generatedPayload) return;
+    if (!userId) {
+      setErrorMessage("Please sign in before saving.");
+      showToast("Please sign in before saving.", "error");
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage("");
+    try {
+      const response = await authenticatedFetch("/api/quizzes/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerId: userId,
+          mode: generatedPayload.mode,
+          timerSettings: {
+            durationMinutes:
+              generatedPayload.duration && generatedPayload.duration.includes("minutes")
+                ? Number.parseInt(generatedPayload.duration, 10) || null
+                : null,
+            timerEnabled: true,
+          },
+          quizData: {
+            title: generatedPayload.title,
+            questions: generatedPayload.questions,
+            score: generatedPayload.score,
+          },
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Failed to save quiz");
+      }
+
+      setIsPreviewSaved(true);
+      showToast("Saved to Exam Prep successfully", "success");
+      setTimeout(() => {
+        router.push("/exam-prep");
+      }, 500);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save quiz";
+      setErrorMessage(message);
+      showToast(message, "error");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -279,7 +640,7 @@ export default function GeneratorPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Content Generator</h1>
+          <h1 className="text-2xl font-bold">Exam Generator</h1>
         </div>
       </div>
 
@@ -291,6 +652,11 @@ export default function GeneratorPage() {
             <CardDescription>Setup your generation parameters.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 overflow-y-auto flex-1">
+            {errorMessage && (
+              <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
+                {errorMessage}
+              </div>
+            )}
             
             {/* Mode Selection */}
             <Tabs 
@@ -298,6 +664,9 @@ export default function GeneratorPage() {
                 onValueChange={(v) => {
                     setMode(v as "paper" | "quiz");
                     setGeneratedContent(null);
+                setGeneratedPayload(null);
+                setRevealedAnswers(new Set());
+                setIsPreviewSaved(false);
                 }} 
                 className="w-full"
             >
@@ -308,87 +677,18 @@ export default function GeneratorPage() {
             </Tabs>
 
             <div className="space-y-4">
-              <label className="text-sm font-medium">Materials & References</label>
-              
-              <div className="flex gap-2">
-                <Button 
-                    variant="outline" 
-                    onClick={() => setIsLibraryOpen(true)}
-                    className="flex-1"
-                >
-                    <Library className="mr-2 h-4 w-4" />
-                    Library
-                </Button>
-                <div className="relative flex-1">
-                    <Button variant="outline" className="w-full">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Upload
-                    </Button>
-                    <input 
-                        type="file" 
-                        multiple 
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        onChange={handleFileUpload}
-                    />
-                </div>
-              </div>
+              {renderFileSection(
+              "syllabus",
+              "Syllabus / Materials",
+              "Upload or pick materials to generate questions from."
+              )}
 
-              {/* Selected Files List */}
-              <div className="bg-muted/30 rounded-lg border min-h-[150px] p-2 space-y-2">
-                {selectedFiles.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-8 text-sm">
-                        <FileText className="h-8 w-8 mb-2 opacity-50" />
-                        <p>No files selected</p>
-                    </div>
-                ) : (
-                    selectedFiles.map((file) => (
-                        <div key={file.id} className="bg-background border rounded-md p-3 text-sm shadow-sm group">
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                                <div className="flex items-center gap-2 overflow-hidden">
-                                     <div className="bg-primary/10 p-1.5 rounded shrink-0">
-                                        <FileType className="h-4 w-4 text-primary" />
-                                    </div>
-                                    <span className="font-medium truncate">{file.name}</span>
-                                </div>
-                                <button 
-                                    onClick={() => removeFile(file.id)}
-                                    className="text-muted-foreground hover:text-destructive shrink-0"
-                                >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            </div>
-                            
-                            <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded text-xs">
-                                <span className="text-muted-foreground shrink-0">Use as:</span>
-                                <div className="flex gap-2 w-full">
-                                    <label className="flex items-center gap-1.5 cursor-pointer">
-                                        <input 
-                                            type="radio" 
-                                            name={`role-${file.id}`}
-                                            checked={file.role === "source"}
-                                            onChange={() => updateFileRole(file.id, "source")}
-                                            className="text-primary focus:ring-primary h-3 w-3"
-                                        />
-                                        Source
-                                    </label>
-                                    <label className={cn("flex items-center gap-1.5 cursor-pointer", mode === "quiz" && "opacity-50 cursor-not-allowed")}>
-                                        <input 
-                                            type="radio" 
-                                            name={`role-${file.id}`}
-                                            checked={file.role === "reference"}
-                                            onChange={() => mode === "paper" && updateFileRole(file.id, "reference")}
-                                            disabled={mode === "quiz"} 
-                                            title={mode === "quiz" ? "Reference material is only for Past Year Papers" : ""}
-                                            className="text-primary focus:ring-primary h-3 w-3"
-                                        />
-                                        Past Year
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-              </div>
+              {mode === "paper" &&
+              renderFileSection(
+                "reference",
+                "Past Year Paper (Reference Format)",
+                "Upload or pick past year paper files to guide question format/style."
+              )}
             </div>
 
             {/* Dynamic Inputs based on Mode */}
@@ -412,13 +712,25 @@ export default function GeneratorPage() {
                     </div>
                 </div>
             ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium">Time Limit (mins)</label>
+                        <Input
+                            type="number"
+                            min={1}
+                            value={quizTimeLimit}
+                            onChange={(e) => setQuizTimeLimit(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="space-y-2">
                     <label className="text-sm font-medium">Number of Questions</label>
                     <Input 
                         type="number" 
                         value={questionCount} 
                         onChange={(e) => setQuestionCount(e.target.value)} 
                     />
+                    </div>
                 </div>
             )}
 
@@ -452,14 +764,19 @@ export default function GeneratorPage() {
                 <h2 className="font-semibold text-lg flex items-center gap-2">
                     Preview
                     {generatedContent && <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-normal">Generated</span>}
+                    {generatedContent && !isPreviewSaved && (
+                      <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-2 py-0.5 rounded-full font-normal">
+                        Save to enable actions
+                      </span>
+                    )}
                 </h2>
                 <Button 
                     variant="default" 
                     size="sm" 
-                    disabled={!generatedContent} 
-                    onClick={handleSave}
+                  disabled={!generatedContent || isSaving} 
+                  onClick={() => void handleSave()}
                 >
-                    <Save className="mr-2 h-4 w-4" /> Save {mode === "paper" ? "Paper" : "Quiz"}
+                  <Save className="mr-2 h-4 w-4" /> {isSaving ? "Saving..." : `Save ${mode === "paper" ? "Paper" : "Quiz"}`}
                 </Button>
             </div>
 
@@ -493,7 +810,10 @@ export default function GeneratorPage() {
                                                 </span>
                                             </div>
                                             
-                                            <p className="mb-4 text-lg font-medium leading-relaxed">{q.question}</p>
+                                            <MarkdownBlock
+                                              content={q.question}
+                                              className="mb-4 text-foreground"
+                                            />
                                             
                                             {/* Different format based on question type */}
                                             <div className="my-4">
@@ -525,6 +845,7 @@ export default function GeneratorPage() {
                                                     size="sm"
                                                     onClick={() => toggleAnswer(q.id)}
                                                     className="mb-2"
+                                                  disabled={!isPreviewSaved}
                                                 >
                                                     {revealedAnswers.has(q.id) ? "Hide Answer" : "Show Answer"}
                                                 </Button>
@@ -532,7 +853,7 @@ export default function GeneratorPage() {
                                                 {revealedAnswers.has(q.id) && (
                                                     <div className="bg-background/80 p-4 rounded-md border text-sm text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-200">
                                                         <strong className="block text-foreground mb-1 text-xs uppercase tracking-wider">Suggested Answer:</strong>
-                                                        {q.sampleAnswer}
+                                                    <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
                                                     </div>
                                                 )}
                                             </div>
@@ -548,17 +869,20 @@ export default function GeneratorPage() {
                             <h1 className="text-3xl font-bold uppercase tracking-wide mb-2">{generatedContent.title}</h1>
                              <div className="flex justify-center gap-8 text-muted-foreground">
                                 <span className="flex items-center gap-1"><BrainCircuit className="h-4 w-4" /> {generatedContent.totalQuestions} Questions</span>
+                            <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> {`${Math.max(1, Number.parseInt(quizTimeLimit, 10) || 30)} min`}</span>
                             </div>
                         </div>
                         {generatedContent.sections.map((section, sIdx) => (
                              <div key={sIdx} className="space-y-8">
                                 <h3 className="font-bold text-xl border-b pb-2 hidden">{section.title}</h3>
-                                {section.questions.map((q, qIdx) => (
+                                {section.questions.map((q) => (
                                     <div key={q.id} className="space-y-4 p-4 border rounded-lg bg-card hover:shadow-sm transition-shadow">
                                         <div className="flex gap-4">
-                                            <div className="flex-none font-bold text-lg text-primary">{qIdx + 1}.</div>
                                             <div className="flex-1 space-y-4">
-                                                <p className="text-lg font-medium">{q.question}</p>
+                                                <MarkdownBlock
+                                                  content={q.question}
+                                                  className="text-foreground"
+                                                />
                                                 
                                                 <div className="grid gap-3">
                                                     {q.options?.map((option, oIdx) => (
@@ -576,13 +900,15 @@ export default function GeneratorPage() {
                                                             size="sm" 
                                                             className="w-fit"
                                                             onClick={() => toggleAnswer(q.id)}
+                                                          disabled={!isPreviewSaved}
                                                          >
                                                             {revealedAnswers.has(q.id) ? "Hide Answer" : "Show Answer"}
                                                          </Button>
                                                          
                                                          {revealedAnswers.has(q.id) && (
                                                              <div className="bg-background p-2 rounded border mt-1 animate-in fade-in slide-in-from-top-1">
-                                                                 <span className="font-semibold text-primary">Correct Answer:</span> {q.sampleAnswer}
+                                                             <span className="font-semibold text-primary">Correct Answer:</span>
+                                                             <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
                                                              </div>
                                                          )}
                                                      </div>
@@ -614,22 +940,30 @@ export default function GeneratorPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <Card className="w-full max-w-lg shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-              <CardTitle>Select from Library</CardTitle>
+              <CardTitle>
+                Select from Library ({libraryTarget === "syllabus" ? "Syllabus / Materials" : "Past Year Reference"})
+              </CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setIsLibraryOpen(false)}>
                 <X className="h-4 w-4" />
               </Button>
             </CardHeader>
             <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto">
-              {MOCK_LIBRARY_FILES.map((file) => (
+              {isLibraryLoading && (
+                <div className="text-sm text-muted-foreground">Loading library files...</div>
+              )}
+              {!isLibraryLoading && libraryFiles.length === 0 && (
+                <div className="text-sm text-muted-foreground">No files found in your library.</div>
+              )}
+              {libraryFiles.map((file) => (
                 <div 
                   key={file.id} 
                   className={cn(
                     "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors",
-                    selectedFiles.some(f => f.id === file.id)
+                    getSelectedFilesByTarget(libraryTarget).some(f => f.id === file.id)
                       ? "bg-primary/10 border-primary" 
                       : "hover:bg-accent"
                   )}
-                  onClick={() => toggleLibraryFile(file)}
+                  onClick={() => toggleLibraryFile(file, libraryTarget)}
                 >
                   <div className="flex items-center gap-3">
                     <div className="bg-muted p-2 rounded">
@@ -640,7 +974,7 @@ export default function GeneratorPage() {
                       <p className="text-xs text-muted-foreground">{file.type}</p>
                     </div>
                   </div>
-                  {selectedFiles.some(f => f.id === file.id) && (
+                  {getSelectedFilesByTarget(libraryTarget).some(f => f.id === file.id) && (
                     <Check className="h-5 w-5 text-primary" />
                   )}
                 </div>
@@ -651,12 +985,13 @@ export default function GeneratorPage() {
                 Cancel
               </Button>
               <Button onClick={() => setIsLibraryOpen(false)}>
-                Confirm Selection ({selectedFiles.filter(f => f.origin === "library").length})
+                Confirm Selection ({getSelectedFilesByTarget(libraryTarget).length})
               </Button>
             </div>
           </Card>
         </div>
       )}
+      <StatusToast toast={toast} onClose={clearToast} />
     </div>
   );
 }

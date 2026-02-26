@@ -3,19 +3,23 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { useAuth } from '@/context/AuthContext';
 import {
   getUserFilesByType,
   getUserStorageStatsFromFirestore,
   FirestoreFile,
 } from '@/lib/firebase/userFileManagement/readFiles';
 import { deleteFile } from '@/lib/firebase/userFileManagement/deleteFile';
-
-// Temporary test user ID (replace with actual auth user ID in production)
-const TEST_USER_ID = 'test-user-123';
+import {
+  DOCUMENT_UPLOAD_ACCEPT,
+  IMAGE_UPLOAD_ACCEPT,
+  PDF_UPLOAD_ACCEPT,
+} from '@/lib/upload/fileTypePolicy';
 
 type FileType = 'pdf' | 'image' | 'document';
 
 export default function FirebaseTestPage() {
+  const { userId, loading: authLoading } = useAuth();
   const [firestoreStatus, setFirestoreStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [firestoreMessage, setFirestoreMessage] = useState('');
   const [storageStatus, setStorageStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -28,13 +32,13 @@ export default function FirebaseTestPage() {
   const [stats, setStats] = useState<{ totalFiles: number; totalSize: number; pdfCount: number; imageCount: number; textCount: number } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const refreshFiles = async () => {
+  const refreshFiles = async (activeUserId: string) => {
     try {
       const [pdfList, imageList, documentList, storageStats] = await Promise.all([
-        getUserFilesByType(TEST_USER_ID, 'pdf').catch(() => []),
-        getUserFilesByType(TEST_USER_ID, 'image').catch(() => []),
-        getUserFilesByType(TEST_USER_ID, 'text').catch(() => []),
-        getUserStorageStatsFromFirestore(TEST_USER_ID).catch(() => null),
+        getUserFilesByType(activeUserId, 'pdf').catch(() => []),
+        getUserFilesByType(activeUserId, 'image').catch(() => []),
+        getUserFilesByType(activeUserId, 'text').catch(() => []),
+        getUserStorageStatsFromFirestore(activeUserId).catch(() => null),
       ]);
       setPdfs(pdfList);
       setImages(imageList);
@@ -47,11 +51,12 @@ export default function FirebaseTestPage() {
 
   const handleDeleteFile = async (fileId: string, storagePath: string, fileName: string) => {
     if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+    if (!userId) return;
     
     setDeleting(fileId);
     try {
       await deleteFile(fileId, storagePath);
-      await refreshFiles();
+      await refreshFiles(userId);
       alert('File deleted successfully!');
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -63,6 +68,10 @@ export default function FirebaseTestPage() {
   };
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     // Test Firestore connection
     const testFirestore = async () => {
       try {
@@ -82,8 +91,18 @@ export default function FirebaseTestPage() {
 
     // Test Storage connection
     const testStorage = async () => {
+      if (!userId) {
+        setStorageStatus('error');
+        setStorageMessage('❌ Please sign in to test storage access');
+        setPdfs([]);
+        setImages([]);
+        setDocuments([]);
+        setStats(null);
+        return;
+      }
+
       try {
-        await refreshFiles();
+        await refreshFiles(userId);
         setStorageStatus('success');
         setStorageMessage('✅ Storage connected!');
       } catch (error: unknown) {
@@ -97,19 +116,23 @@ export default function FirebaseTestPage() {
     };
 
     testFirestore();
-    testStorage();
-  }, []);
+    void testStorage();
+  }, [authLoading, userId]);
 
   // Handle file upload using /api/upload route
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!userId) {
+      alert('Please sign in before uploading.');
+      return;
+    }
 
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('userId', TEST_USER_ID);
+      formData.append('userId', userId);
 
       const response = await fetch('/api/upload-file', {
         method: 'POST',
@@ -125,7 +148,7 @@ export default function FirebaseTestPage() {
       alert(`✅ File uploaded and extracted!\nURL: ${result.uploadResult.url}`);
       
       // Refresh file list
-      await refreshFiles();
+      await refreshFiles(userId);
     } catch (error: unknown) {
       if (error instanceof Error) {
         alert(`❌ Upload failed: ${error.message}`);
@@ -139,9 +162,9 @@ export default function FirebaseTestPage() {
 
   const getAcceptTypes = () => {
     switch (uploadType) {
-      case 'pdf': return '.pdf';
-      case 'image': return 'image/*';
-      case 'document': return '.txt,.md,.csv';
+      case 'pdf': return PDF_UPLOAD_ACCEPT;
+      case 'image': return IMAGE_UPLOAD_ACCEPT;
+      case 'document': return DOCUMENT_UPLOAD_ACCEPT;
     }
   };
 
@@ -201,7 +224,7 @@ export default function FirebaseTestPage() {
           {storageStatus === 'success' && (
             <div className="pt-4 border-t border-zinc-200 dark:border-zinc-700">
               <h2 className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
-                Test Upload (User: {TEST_USER_ID})
+                Test Upload (User: {userId ?? 'Not signed in'})
               </h2>
               
               {/* Upload Type Selection */}

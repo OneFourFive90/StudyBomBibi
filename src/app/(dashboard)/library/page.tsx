@@ -13,6 +13,7 @@ import { StatusToast } from "@/components/ui/status-toast";
 import { RenameModal } from "@/components/ui/rename-modal";
 import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
+import { UPLOAD_FILE_ACCEPT } from "@/lib/upload/fileTypePolicy";
 import {
   Book,
   FileText,
@@ -127,7 +128,7 @@ function toFileMaterial(file: FileRecord): Material {
 }
 
 export default function LibraryPage() {
-  const { user, userId, loading: authLoading } = useAuth();
+  const { userId, loading: authLoading } = useAuth();
   const [allFolders, setAllFolders] = useState<FolderRecord[]>([]);
   const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
   const [notes, setNotes] = useState<Material[]>([]);
@@ -676,6 +677,7 @@ export default function LibraryPage() {
 
       const uploadResult = await uploadResponse.json();
       const uploadedFileId = uploadResult?.fileId as string | undefined;
+      const alreadyExists = uploadResult?.uploadResult?.alreadyExists === true;
 
       if (currentFolderId && uploadedFileId) {
         await authenticatedFetch("/api/folders", {
@@ -690,7 +692,7 @@ export default function LibraryPage() {
       }
 
       await loadLibraryData();
-      showToast("File uploaded successfully", "success");
+      showToast(alreadyExists ? "File already exists in library" : "File uploaded successfully", "success");
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Failed to upload file";
       setError(message);
@@ -1084,7 +1086,7 @@ export default function LibraryPage() {
         type="file"
         className="hidden"
         onChange={handleSelectUploadFile}
-        accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.markdown,.csv"
+        accept={UPLOAD_FILE_ACCEPT}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4">

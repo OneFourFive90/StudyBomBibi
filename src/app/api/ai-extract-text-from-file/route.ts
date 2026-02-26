@@ -3,39 +3,11 @@ import { fileManager, reasoningModel } from "@/lib/gemini";
 import { writeFile, unlink } from "fs/promises";
 import path from "path";
 import os from "os";
-
-const ALLOWED_TYPES = [
-  "application/pdf",
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-];
-
-const EXTENSION_MIME_MAP: Record<string, string> = {
-  pdf: "application/pdf",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  txt: "text/plain",
-  md: "text/markdown",
-  markdown: "text/markdown",
-  csv: "text/csv",
-};
-
-function normalizeFileMimeType(file: File): string {
-  const rawType = (file.type || "").toLowerCase();
-  if (ALLOWED_TYPES.includes(rawType)) {
-    return rawType;
-  }
-
-  const extension = file.name.split(".").pop()?.toLowerCase() || "";
-  return EXTENSION_MIME_MAP[extension] || rawType;
-}
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  normalizeUploadMimeType,
+  SUPPORTED_UPLOAD_TYPES_LABEL,
+} from "@/lib/upload/fileTypePolicy";
 
 export async function POST(req: Request) {
   let tempFilePath: string | null = null;
@@ -49,11 +21,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    const normalizedMimeType = normalizeFileMimeType(file);
+    const normalizedMimeType = normalizeUploadMimeType(file.type, file.name);
 
-    if (!ALLOWED_TYPES.includes(normalizedMimeType)) {
+    if (!ALLOWED_UPLOAD_MIME_TYPES.includes(normalizedMimeType as (typeof ALLOWED_UPLOAD_MIME_TYPES)[number])) {
       return NextResponse.json(
-        { error: `File type ${file.type || "unknown"} is not supported.` },
+        { error: `File type ${file.type || "unknown"} is not supported. Allowed: ${SUPPORTED_UPLOAD_TYPES_LABEL}.` },
         { status: 400 }
       );
     }

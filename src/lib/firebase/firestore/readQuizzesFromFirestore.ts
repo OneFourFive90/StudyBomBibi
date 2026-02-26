@@ -6,7 +6,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  Query,
   QueryConstraint,
   Timestamp,
 } from "firebase/firestore";
@@ -170,7 +169,7 @@ export async function getQuizzesByOwnerIdWithFilters(
 export async function getQuestionByIds(
   quizId: string,
   questionId: string
-): Promise<any | null> {
+): Promise<QuizDocument["questions"][number] | null> {
   try {
     const quiz = await getQuizById(quizId);
 
