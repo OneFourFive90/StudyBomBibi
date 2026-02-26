@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { processChatbot } from "@/lib/ai/processChatbot";
 import { saveChatToFirestore } from "@/lib/firebase/firestore/saveChatToFirestore";
 import { getExtractedTextsFromFiles } from "@/lib/firebase/firestore/getExtractedTextFromFile";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 interface HistoryMessage {
   role: string;
@@ -19,21 +20,25 @@ interface HistoryMessage {
  */
 export async function POST(req: Request) {
   try {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const {
-      userId, // REQUIRED: User ID (from auth)
       message, // REQUIRED: User message
       history = [], // OPTIONAL: Chat history for context
       attachedFileIds = [], // OPTIONAL: Array of file IDs attached to this message
     } = body;
-
-    // Validate required fields
-    if (!userId) {
-      return NextResponse.json(
-        { error: "userId is required" },
-        { status: 400 }
-      );
-    }
 
     if (!message) {
       return NextResponse.json(
