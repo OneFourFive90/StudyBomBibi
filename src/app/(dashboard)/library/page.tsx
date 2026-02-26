@@ -11,6 +11,7 @@ import { StatusToast } from "@/components/ui/status-toast";
 import { RenameModal } from "@/components/ui/rename-modal";
 import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
+import { UPLOAD_FILE_ACCEPT } from "@/lib/upload/fileTypePolicy";
 import {
   Book,
   FileText,
@@ -1089,7 +1090,7 @@ export default function LibraryPage() {
         type="file"
         className="hidden"
         onChange={handleSelectUploadFile}
-        accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.markdown,.csv"
+        accept={UPLOAD_FILE_ACCEPT}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4">

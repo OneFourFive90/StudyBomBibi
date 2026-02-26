@@ -9,6 +9,11 @@ import {
   FirestoreFile,
 } from '@/lib/firebase/userFileManagement/readFiles';
 import { deleteFile } from '@/lib/firebase/userFileManagement/deleteFile';
+import {
+  DOCUMENT_UPLOAD_ACCEPT,
+  IMAGE_UPLOAD_ACCEPT,
+  PDF_UPLOAD_ACCEPT,
+} from '@/lib/upload/fileTypePolicy';
 
 // Temporary test user ID (replace with actual auth user ID in production)
 const TEST_USER_ID = 'test-user-123';
@@ -139,9 +144,9 @@ export default function FirebaseTestPage() {
 
   const getAcceptTypes = () => {
     switch (uploadType) {
-      case 'pdf': return '.pdf';
-      case 'image': return 'image/*';
-      case 'document': return '.txt,.md,.csv';
+      case 'pdf': return PDF_UPLOAD_ACCEPT;
+      case 'image': return IMAGE_UPLOAD_ACCEPT;
+      case 'document': return DOCUMENT_UPLOAD_ACCEPT;
     }
   };
 
