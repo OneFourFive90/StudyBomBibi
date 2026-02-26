@@ -18,6 +18,28 @@ const ALLOWED_TYPES = [
   "text/csv",
 ];
 
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  txt: "text/plain",
+  md: "text/markdown",
+  markdown: "text/markdown",
+  csv: "text/csv",
+};
+
+function normalizeFileMimeType(file: File): string {
+  const rawType = (file.type || "").toLowerCase();
+  if (ALLOWED_TYPES.includes(rawType)) {
+    return rawType;
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return EXTENSION_MIME_MAP[extension] || rawType;
+}
+
 export async function POST(req: Request) {
   try {
     // Parse the incoming form data
@@ -33,16 +55,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No userId provided" }, { status: 400 });
     }
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    const normalizedMimeType = normalizeFileMimeType(file);
+
+    if (!ALLOWED_TYPES.includes(normalizedMimeType)) {
       return NextResponse.json(
-        { error: `File type ${file.type} is not supported.` },
+        { error: `File type ${file.type || "unknown"} is not supported.` },
         { status: 400 }
       );
     }
 
     // Call AI extract endpoint
     const aiFormData = new FormData();
-    aiFormData.append("file", file);
+    const fileForAi =
+      file.type === normalizedMimeType
+        ? file
+        : new File([file], file.name, {
+            type: normalizedMimeType,
+            lastModified: Date.now(),
+          });
+
+    aiFormData.append("file", fileForAi);
 
     const aiResponse = await fetch(
       `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/ai-extract-text-from-file`,
@@ -64,7 +96,15 @@ export async function POST(req: Request) {
     const extractedText = aiData.extractText;
 
     // Upload file to Firebase
-    const uploadResult = await uploadFile(userId, file, extractedText);
+    const fileForUpload =
+      file.type === normalizedMimeType
+        ? file
+        : new File([file], file.name, {
+            type: normalizedMimeType,
+            lastModified: Date.now(),
+          });
+
+    const uploadResult = await uploadFile(userId, fileForUpload, extractedText);
 
     return NextResponse.json({
       success: true,

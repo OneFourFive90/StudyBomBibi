@@ -161,52 +161,8 @@ export async function moveFolderToParent(
 }
 
 /**
- * Delete a folder (requires it to be empty)
- */
-export async function deleteFolder(
-  folderId: string,
-  ownerId: string
-): Promise<void> {
-  const folder = await getFolder(folderId, ownerId);
-  if (!folder) {
-    throw new Error('Folder not found');
-  }
-
-  // Check if folder has any files
-  const filesQuery = query(
-    collection(db, 'files'),
-    where('ownerId', '==', ownerId),
-    where('folderId', '==', folderId)
-  );
-  const files = await getDocs(filesQuery);
-
-  if (files.size > 0) {
-    throw new Error(
-      `Cannot delete folder with ${files.size} file(s). Please move or delete files first.`
-    );
-  }
-
-  // Check if folder has any subfolders
-  const subfolderQuery = query(
-    collection(db, 'folders'),
-    where('ownerId', '==', ownerId),
-    where('parentFolderId', '==', folderId)
-  );
-  const subfolders = await getDocs(subfolderQuery);
-
-  if (subfolders.size > 0) {
-    throw new Error(
-      `Cannot delete folder with ${subfolders.size} subfolder(s). Please delete subfolders first.`
-    );
-  }
-
-  const folderRef = doc(db, 'folders', folderId);
-  await deleteDoc(folderRef);
-}
-
-/**
  * Delete folder recursively with all nested subfolders
- * IMPORTANT: Call deleteFilesInFolder first to clean up files!
+ * IMPORTANT: Call deleteFilesInFolderRecursively first to clean up files!
  * This only deletes folder documents and their nested structure
  */
 export async function deleteFolderRecursively(

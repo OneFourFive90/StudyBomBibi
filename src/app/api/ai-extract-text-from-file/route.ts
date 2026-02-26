@@ -15,6 +15,28 @@ const ALLOWED_TYPES = [
   "text/csv",
 ];
 
+const EXTENSION_MIME_MAP: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  txt: "text/plain",
+  md: "text/markdown",
+  markdown: "text/markdown",
+  csv: "text/csv",
+};
+
+function normalizeFileMimeType(file: File): string {
+  const rawType = (file.type || "").toLowerCase();
+  if (ALLOWED_TYPES.includes(rawType)) {
+    return rawType;
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return EXTENSION_MIME_MAP[extension] || rawType;
+}
+
 export async function POST(req: Request) {
   let tempFilePath: string | null = null;
 
@@ -27,9 +49,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    const normalizedMimeType = normalizeFileMimeType(file);
+
+    if (!ALLOWED_TYPES.includes(normalizedMimeType)) {
       return NextResponse.json(
-        { error: `File type ${file.type} is not supported.` },
+        { error: `File type ${file.type || "unknown"} is not supported.` },
         { status: 400 }
       );
     }
@@ -43,7 +67,7 @@ export async function POST(req: Request) {
 
     // Upload to Gemini
     const uploadedFile = await fileManager.uploadFile(tempFilePath, {
-      mimeType: file.type,
+      mimeType: normalizedMimeType,
       displayName: sanitizedName,
     });
 
@@ -69,7 +93,7 @@ export async function POST(req: Request) {
     // DEFINE SMART PROMPTS
     let aiInstruction = "";
 
-    if (file.type.startsWith("image/")) {
+    if (normalizedMimeType.startsWith("image/")) {
       // IMAGE / HANDWRITING LOGIC
       aiInstruction = `
     Analyze this image. 
@@ -78,7 +102,7 @@ export async function POST(req: Request) {
     3. If it is a slide, transcribe the text and describe any visuals.
     Output the result in clean Markdown.
   `;
-    } else if (file.type === "application/pdf") {
+    } else if (normalizedMimeType === "application/pdf") {
       // PDF / SLIDE LOGIC
       aiInstruction = `
     Read this document and extract all text.
