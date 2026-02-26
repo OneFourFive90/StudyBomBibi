@@ -1,13 +1,19 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
-  const { signInWithGoogle, user, loading } = useAuth();
+  const { signInWithGoogle, signIn, signUp, user, loading } = useAuth();
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (user && !loading) {
@@ -15,11 +21,45 @@ export default function LoginPage() {
     }
   }, [user, loading, router]);
 
-  const handleLogin = async () => {
+  const handleGoogleLogin = async () => {
     try {
+      setError("");
       await signInWithGoogle();
     } catch (error) {
+      setError("Google login failed");
       console.error("Login failed", error);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      if (!email || !password) {
+        setError("Please fill in all fields");
+        setIsLoading(false);
+        return;
+      }
+
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters");
+        setIsLoading(false);
+        return;
+      }
+
+      if (isSignUp) {
+        await signUp(email, password);
+      } else {
+        await signIn(email, password);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Authentication failed";
+      setError(errorMessage);
+      console.error("Auth error", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -28,11 +68,81 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="bg-primary text-primary-foreground p-8 rounded shadow-md w-full max-w-sm">
-        <h2 className="text-2xl font-bold mb-6 text-center">Sign in with Google</h2>
+        <h2 className="text-2xl font-bold mb-6 text-center">
+          {isSignUp ? "Create Account" : "Sign In"}
+        </h2>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-500 text-white rounded text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Email/Password Form */}
+        <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium mb-2">Email</label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              className="w-full"
+              disabled={isLoading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Password</label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your password"
+              className="w-full"
+              disabled={isLoading}
+            />
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full bg-foreground text-primary hover:bg-muted hover:text-muted-foreground"
+            disabled={isLoading}
+          >
+            {isLoading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
+          </Button>
+        </form>
+
+        {/* Toggle Sign Up / Sign In */}
+        <div className="mb-6 text-center text-sm">
+          {isSignUp ? "Already have an account? " : "Don't have an account? "}
+          <button
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setError("");
+            }}
+            className="underline font-semibold hover:opacity-80 transition-opacity"
+            disabled={isLoading}
+          >
+            {isSignUp ? "Sign In" : "Sign Up"}
+          </button>
+        </div>
+
+        {/* Google Sign In */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-primary-foreground opacity-30"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="px-2 bg-primary">Or continue with</span>
+          </div>
+        </div>
+
         <Button 
           variant="ghost" 
-          onClick={handleLogin}
+          onClick={handleGoogleLogin}
           className="w-full bg-foreground flex items-center justify-center gap-2 hover:bg-muted hover:text-muted-foreground"
+          disabled={isLoading}
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="h-5 w-5">
             <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>

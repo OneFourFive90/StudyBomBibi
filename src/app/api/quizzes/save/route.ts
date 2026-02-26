@@ -6,17 +6,27 @@ quiz data (already in Firestore format) into Firestore
 import { NextResponse } from "next/server";
 import { saveQuizToFirestore } from "@/lib/firebase/firestore/saveQuizToFirestore";
 import { QuizQuestion, QuizScore } from "@/lib/firebase/firestore/saveQuizToFirestore";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { ownerId, mode, quizData, customTitle } = body;
-
-    // Validate required fields
-    if (!ownerId) {
-      return NextResponse.json({ error: "Missing ownerId." }, { status: 400 });
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let ownerId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      ownerId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
     }
 
+    const body = await req.json();
+    const { mode, quizData, customTitle } = body;
+
+    // Validate required fields
     if (!mode || !["mcq", "past_year"].includes(mode)) {
       return NextResponse.json(
         { error: "Invalid mode. Use 'mcq' or 'past_year'." },

@@ -2,21 +2,35 @@ import { NextResponse } from "next/server";
 import { getExtractedTextsFromFiles } from "@/lib/firebase/firestore/getExtractedTextFromFile";
 import { saveStudyPlanToFirestore } from "@/lib/firebase/firestore/study-plan/saveStudyPlanToFirestore";
 import { generateStudyPlan } from "@/lib/ai/generateStudyPlan";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 /**
  * POST /api/study-plan/create
  * 
  * Creates a complete study plan:
- * 1. Retrieves extracted text from file IDs
- * 2. Calls AI to generate study plan
- * 3. Saves plan to Firestore
- * 4. Returns planId for frontend navigation
+ * 1. Verifies user via ID token
+ * 2. Retrieves extracted text from file IDs
+ * 3. Calls AI to generate study plan
+ * 4. Saves plan to Firestore
+ * 5. Returns planId for frontend navigation
  */
 export async function POST(req: Request) {
   try {
+    // ============ VERIFY ID TOKEN ============
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const {
-      ownerId,
       fileIds,       // Array of file document IDs
       days,          // Number of days for the study plan
       hoursPerDay,   // Hours per day
@@ -24,13 +38,6 @@ export async function POST(req: Request) {
     } = body;
 
     // ============ VALIDATION ============
-    if (!ownerId || typeof ownerId !== "string") {
-      return NextResponse.json(
-        { error: "Missing required field: 'ownerId'" },
-        { status: 400 }
-      );
-    }
-
     if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
       return NextResponse.json(
         { error: "Missing required field: 'fileIds' (must be non-empty array)" },
@@ -55,7 +62,7 @@ export async function POST(req: Request) {
     // ============ STEP 1: RETRIEVE EXTRACTED TEXT FROM FILES ============
     console.log(`[StudyPlan] Retrieving text from ${fileIds.length} files...`);
     
-    const fileResults = await getExtractedTextsFromFiles(fileIds, ownerId);
+    const fileResults = await getExtractedTextsFromFiles(fileIds, userId);
     
     // Check for errors
     const errors = fileResults.filter((r) => r.error);
@@ -112,7 +119,7 @@ export async function POST(req: Request) {
     console.log(`[StudyPlan] Saving to Firestore...`);
 
     const saveResult = await saveStudyPlanToFirestore({
-      ownerId,
+      ownerId: userId,
       sourceFileIds: fileIds,
       hoursPerDay,
       prefStyle: formats,

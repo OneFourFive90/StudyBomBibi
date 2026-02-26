@@ -2,8 +2,8 @@
 
 import { Timestamp } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
-
-const TEST_USER_ID = 'test-user-123';
+import { useAuth } from '@/context/AuthContext';
+import { authenticatedFetch } from '@/lib/authenticatedFetch';
 
 interface Folder {
   id: string;
@@ -25,6 +25,7 @@ interface File {
 }
 
 export default function FolderManagementPage() {
+  const { user } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -47,10 +48,9 @@ export default function FolderManagementPage() {
       const action = folderId ? 'get-files' : 'get-root-files';
       const url = new URL('/api/folders', window.location.origin);
       url.searchParams.set('action', action);
-      url.searchParams.set('userId', TEST_USER_ID);
       if (folderId) url.searchParams.set('folderId', folderId);
 
-      const response = await fetch(url.toString());
+      const response = await authenticatedFetch(url.toString());
       if (!response.ok) throw new Error('Failed to load files');
       const data = await response.json();
       setFiles(data.files);
@@ -59,9 +59,8 @@ export default function FolderManagementPage() {
       if (folderId) {
         const breadcrumbUrl = new URL('/api/folders', window.location.origin);
         breadcrumbUrl.searchParams.set('action', 'get-breadcrumb');
-        breadcrumbUrl.searchParams.set('userId', TEST_USER_ID);
         breadcrumbUrl.searchParams.set('folderId', folderId);
-        const breadcrumbResp = await fetch(breadcrumbUrl.toString());
+        const breadcrumbResp = await authenticatedFetch(breadcrumbUrl.toString());
         if (breadcrumbResp.ok) {
           const breadcrumbData = await breadcrumbResp.json();
           setBreadcrumb(breadcrumbData.path);
@@ -81,9 +80,8 @@ export default function FolderManagementPage() {
     try {
       const url = new URL('/api/folders', window.location.origin);
       url.searchParams.set('action', 'get-all');
-      url.searchParams.set('userId', TEST_USER_ID);
 
-      const response = await fetch(url.toString());
+      const response = await authenticatedFetch(url.toString());
       if (!response.ok) throw new Error('Failed to load folders');
       const data = await response.json();
       setFolders(data.folders);
@@ -104,12 +102,11 @@ export default function FolderManagementPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/folders', {
+      const response = await authenticatedFetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'create-folder',
-          userId: TEST_USER_ID,
           name: newFolderName,
           parentFolderId: currentFolderId,
         }),
@@ -138,10 +135,9 @@ export default function FolderManagementPage() {
     setError('');
     try {
       const url = new URL('/api/folders', window.location.origin);
-      url.searchParams.set('userId', TEST_USER_ID);
       url.searchParams.set('folderId', folderId);
 
-      const response = await fetch(url.toString(), { method: 'DELETE' });
+      const response = await authenticatedFetch(url.toString(), { method: 'DELETE' });
 
       if (!response.ok) {
         const data = await response.json();
@@ -167,12 +163,11 @@ export default function FolderManagementPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/folders', {
+      const response = await authenticatedFetch('/api/folders', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'rename-folder',
-          userId: TEST_USER_ID,
           folderId,
           name: renameValue,
         }),
@@ -200,12 +195,11 @@ export default function FolderManagementPage() {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/folders', {
+      const response = await authenticatedFetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'move-files',
-          userId: TEST_USER_ID,
           fileIds: Array.from(selectedFiles),
           folderId: targetFolderId,
         }),

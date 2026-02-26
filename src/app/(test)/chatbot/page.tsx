@@ -4,6 +4,8 @@ import { Timestamp } from "firebase/firestore";
 import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useAuth } from "@/context/AuthContext";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 interface ChatMessage {
   id?: string;
@@ -25,7 +27,7 @@ interface FolderItem {
 }
 
 export default function ChatbotPage() {
-  const [userId, setUserId] = useState("test-user-123"); // Hardcoded for testing
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -50,11 +52,11 @@ export default function ChatbotPage() {
 
   // Fetch history and files on load
   useEffect(() => {
-    if (!userId) return;
+    if (!user) return;
 
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`/api/chatbot/get-history?userId=${userId}`);
+        const res = await authenticatedFetch("/api/chatbot/get-history");
         if (res.ok) {
           const data = await res.json();
           const history = data.history || [];
@@ -76,8 +78,8 @@ export default function ChatbotPage() {
     const fetchFilesAndFolders = async () => {
       try {
         const [filesRes, foldersRes] = await Promise.all([
-          fetch(`/api/get-files?userId=${userId}`),
-          fetch(`/api/folders?action=get-all&userId=${userId}`)
+          authenticatedFetch("/api/get-files"),
+          authenticatedFetch("/api/folders?action=get-all")
         ]);
 
         if (filesRes.ok) {
@@ -96,7 +98,7 @@ export default function ChatbotPage() {
 
     fetchHistory();
     fetchFilesAndFolders();
-  }, [userId]);
+  }, [user]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -128,11 +130,10 @@ export default function ChatbotPage() {
         text: msg.content,
       }));
 
-      const res = await fetch("/api/chatbot", {
+      const res = await authenticatedFetch("/api/chatbot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
           message: userMessage,
           history: historyForApi,
           attachedFileIds: selectedFileIds,
@@ -188,14 +189,8 @@ export default function ChatbotPage() {
     <div className="flex flex-col h-screen max-w-4xl mx-auto p-4 bg-gray-50">
       <div className="flex justify-between items-center mb-4 p-4 bg-white rounded-lg shadow">
         <h1 className="text-2xl font-bold text-gray-800">StudyBomBibi Chatbot</h1>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">User ID:</label>
-          <input
-            type="text"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            className="border rounded px-2 py-1 text-sm"
-          />
+        <div className="text-sm text-gray-600">
+          {user ? `Logged in as: ${user.email}` : 'Not logged in'}
         </div>
       </div>
 

@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { QuizQuestion } from "@/lib/firebase/firestore/saveQuizToFirestore";
 import { useRouter } from "next/navigation";
-
-const TEST_USER_ID = "test-user-123";
+import { useAuth } from "@/context/AuthContext";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 interface PreviewQuiz {
   title: string;
@@ -20,6 +20,7 @@ interface PreviewQuiz {
 
 export default function QuizGeneratorPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [step, setStep] = useState<"form" | "generating" | "preview">("form");
   const [mode, setMode] = useState<"mcq" | "past_year">("mcq");
   const [sourceText, setSourceText] = useState<string>("");
@@ -49,9 +50,8 @@ export default function QuizGeneratorPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("userId", TEST_USER_ID);
 
-      const response = await fetch("/api/upload-file", {
+      const response = await authenticatedFetch("/api/upload-file", {
         method: "POST",
         body: formData,
       });
@@ -140,11 +140,10 @@ export default function QuizGeneratorPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/quizzes/save", {
+      const response = await authenticatedFetch("/api/quizzes/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ownerId: TEST_USER_ID,
           mode,
           quizData: previewQuiz,
           customTitle: customTitle || previewQuiz.title,

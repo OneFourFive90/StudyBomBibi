@@ -18,24 +18,36 @@ import {
   getRootFiles,
   deleteFilesInFolderRecursively,
 } from '@/lib/firebase/userFileManagement/fileFolderManagement';
+import { verifyFirebaseIdToken } from '@/lib/firebase/verifyIdToken';
 
 /**
  * GET: Fetch folders or files
  * Query params:
  *   - action: 'get-all' | 'get-root' | 'get-subfolders' | 'get-files' | 'get-breadcrumb'
- *   - userId: required
  *   - folderId: required for get-subfolders, get-files, get-breadcrumb
  */
 export async function GET(req: Request) {
   try {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
-    const userId = searchParams.get('userId') as string;
     const folderId = searchParams.get('folderId') as string | null;
 
-    if (!userId) {
+    if (!action) {
       return NextResponse.json(
-        { error: 'userId is required' },
+        { error: 'action parameter is required' },
         { status: 400 }
       );
     }
@@ -95,20 +107,33 @@ export async function GET(req: Request) {
 /**
  * POST: Create folder or move files
  * Body:
- *   - action: 'create-folder' | 'move-file' | 'move-files'
- *   - userId: required
+ *   - action: 'create-folder' | 'move-file' | 'move-files' | 'delete-file'
  *   - For create-folder: name, parentFolderId (optional)
  *   - For move-file: fileId, folderId (null for root)
  *   - For move-files: fileIds (array), folderId (null for root)
+ *   - For delete-file: fileId
  */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { action, userId } = body;
-
-    if (!userId || !action) {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
       return NextResponse.json(
-        { error: 'userId and action are required' },
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
+    const { action } = body;
+
+    if (!action) {
+      return NextResponse.json(
+        { error: 'action is required' },
         { status: 400 }
       );
     }
@@ -188,10 +213,9 @@ export async function POST(req: Request) {
 }
 
 /**
- * PUT: Update folder
+ * PUT: Update folder or file
  * Body:
  *   - action: 'rename-folder' | 'move-folder' | 'rename-file'
- *   - userId: required
  *   - folderId: required for rename-folder and move-folder
  *   - fileId: required for rename-file
  *   - For rename-folder: name
@@ -200,12 +224,25 @@ export async function POST(req: Request) {
  */
 export async function PUT(req: Request) {
   try {
-    const body = await req.json();
-    const { action, userId, folderId, fileId } = body;
-
-    if (!userId || !action) {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
       return NextResponse.json(
-        { error: 'userId and action are required' },
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
+    const { action, folderId, fileId } = body;
+
+    if (!action) {
+      return NextResponse.json(
+        { error: 'action is required' },
         { status: 400 }
       );
     }
@@ -281,19 +318,30 @@ export async function PUT(req: Request) {
 /**
  * DELETE: Delete folder
  * Query params:
- *   - userId: required
  *   - folderId: required
  * Will recursively delete all nested subfolders and their files.
  */
 export async function DELETE(req: Request) {
   try {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId') as string;
     const folderId = searchParams.get('folderId') as string;
 
-    if (!userId || !folderId) {
+    if (!folderId) {
       return NextResponse.json(
-        { error: 'userId and folderId are required' },
+        { error: 'folderId is required' },
         { status: 400 }
       );
     }

@@ -1,8 +1,14 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
+import { User, onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/firebase";
+import {
+  signInWithGoogle as firebaseSignInWithGoogle,
+  logout as firebaseLogout,
+  signUp as firebaseSignUp,
+  signIn as firebaseSignIn,
+} from "@/lib/firebase/auth";
 import { useRouter } from "next/navigation";
 
 interface AuthContextType {
@@ -10,7 +16,10 @@ interface AuthContextType {
   userId: string | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  getIdToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,7 +27,10 @@ const AuthContext = createContext<AuthContextType>({
   userId: null,
   loading: true,
   signInWithGoogle: async () => {},
+  signUp: async () => {},
+  signIn: async () => {},
   logout: async () => {},
+  getIdToken: async () => "",
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -40,25 +52,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signInWithGoogle = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await firebaseSignInWithGoogle();
       router.push("/dashboard");
     } catch (error) {
       console.error("Error signing in with Google", error);
     }
   };
 
+  const signUp = async (email: string, password: string) => {
+    try {
+      await firebaseSignUp(email, password);
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Error signing up", error);
+      throw error;
+    }
+  };
+
+  const signIn = async (email: string, password: string) => {
+    try {
+      await firebaseSignIn(email, password);
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Error signing in", error);
+      throw error;
+    }
+  };
+
   const logout = async () => {
     try {
-      await signOut(auth);
+      await firebaseLogout();
       router.push("/login");
     } catch (error) {
       console.error("Error signing out", error);
     }
   };
 
+  const getIdToken = async (): Promise<string> => {
+    if (!user) {
+      throw new Error("No user logged in");
+    }
+    return await user.getIdToken();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userId, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, userId, loading, signInWithGoogle, signUp, signIn, logout, getIdToken }}>
       {children}
     </AuthContext.Provider>
   );

@@ -2,23 +2,35 @@ import { NextResponse } from "next/server";
 import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { ref, uploadString } from "firebase/storage";
 import { db, storage } from "@/lib/firebase/firebase";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 interface UpdateNoteRequest {
-  userId?: string;
   fileId?: string;
   content?: string;
 }
 
 export async function PUT(req: Request) {
   try {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     const body = (await req.json()) as UpdateNoteRequest;
-    const userId = body.userId?.trim();
     const fileId = body.fileId?.trim();
     const content = body.content ?? "";
 
-    if (!userId || !fileId) {
+    if (!fileId) {
       return NextResponse.json(
-        { error: "userId and fileId are required" },
+        { error: "fileId is required" },
         { status: 400 }
       );
     }

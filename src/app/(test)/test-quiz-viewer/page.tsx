@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 import {
   QuizDocument,
   MCQQuestion,
@@ -12,9 +13,8 @@ import {
   QuizMetadata,
 } from "@/lib/firebase/firestore/readQuizzesFromFirestore";
 
-const TEST_USER_ID = "test-user-123";
-
 export default function QuizViewerPage() {
+  const { user } = useAuth();
   const [quizzesMetadata, setQuizzesMetadata] = useState<QuizMetadata[]>([]);
   const [selectedQuiz, setSelectedQuiz] = useState<
     (QuizDocument & { id: string }) | null
@@ -25,9 +25,11 @@ export default function QuizViewerPage() {
 
   // Fetch quiz metadata only (lightweight) on initial load
   useEffect(() => {
+    if (!user) return;
+
     const fetchQuizzesMetadata = async () => {
       try {
-        const metadata = await getQuizzesMetadataByOwnerId(TEST_USER_ID);
+        const metadata = await getQuizzesMetadataByOwnerId(user.uid);
         setQuizzesMetadata(metadata);
         setLoading(false);
       } catch (error) {
@@ -37,7 +39,7 @@ export default function QuizViewerPage() {
     };
 
     fetchQuizzesMetadata();
-  }, []);
+  }, [user]);
 
   // Fetch full quiz data when user selects a quiz
   const handleSelectQuiz = async (quizMetadata: QuizMetadata) => {
