@@ -72,7 +72,7 @@ const mapFolderToMaterial = (folder: any): Material => ({
 
 
 export default function AssistantPage() {
-  const { userId } = useAuth();
+  const { userId, getIdToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -96,9 +96,12 @@ export default function AssistantPage() {
 
     const fetchFilesAndFolders = async () => {
         try {
+            const token = await getIdToken();
+            const headers = { Authorization: `Bearer ${token}` };
+
             const [filesRes, foldersRes] = await Promise.all([
-                fetch(`/api/get-files?userId=${userId}`),
-                fetch(`/api/folders?action=get-all&userId=${userId}`)
+                fetch(`/api/get-files?userId=${userId}`, { headers }),
+                fetch(`/api/folders?action=get-all&userId=${userId}`, { headers })
             ]);
 
             let newLibraryItems: Material[] = [];
@@ -123,7 +126,10 @@ export default function AssistantPage() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch(`/api/chatbot/get-history?userId=${userId}`);
+            const token = await getIdToken();
+            const res = await fetch(`/api/chatbot/get-history?userId=${userId}`, { 
+                headers: { Authorization: `Bearer ${token}` } 
+            });
             if (res.ok) {
                 const data = await res.json();
                 const history = (data.history || []).map((msg: any) => ({
@@ -142,7 +148,7 @@ export default function AssistantPage() {
 
     fetchFilesAndFolders();
     fetchHistory();
-  }, [userId]);
+  }, [userId, getIdToken]);
 
   // Auto-scroll
   useEffect(() => {
@@ -176,10 +182,14 @@ export default function AssistantPage() {
         role: msg.role, // 'user' | 'model'
         text: msg.content,
       }));
-
+      
+      const token = await getIdToken();
       const res = await fetch("/api/chatbot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` 
+        },
         body: JSON.stringify({
           userId: userId || "test-user-123", // Fallback for dev
           message: userMessageContent,
@@ -219,8 +229,10 @@ export default function AssistantPage() {
 
     try {
         setIsLoading(true);
+        const token = await getIdToken();
         const res = await fetch(`/api/chatbot/delete-history?userId=${userId}`, {
-            method: "DELETE"
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
         });
         
         if (res.ok) {
