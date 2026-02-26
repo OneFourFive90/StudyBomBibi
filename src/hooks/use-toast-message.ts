@@ -23,7 +23,7 @@ interface ShowToastOptions {
 }
 
 export function useToastMessage(options?: UseToastMessageOptions) {
-  const durationMs = options?.durationMs ?? 3000;
+  const durationMs = options?.durationMs ?? 5000;
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

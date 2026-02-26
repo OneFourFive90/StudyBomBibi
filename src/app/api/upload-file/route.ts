@@ -85,6 +85,7 @@ export async function POST(req: Request) {
         path: uploadResult.path,
         url: uploadResult.url,
         hash: uploadResult.hash,
+        alreadyExists: uploadResult.alreadyExists === true,
       },
     });
 

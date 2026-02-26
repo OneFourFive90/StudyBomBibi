@@ -40,6 +40,7 @@ export interface UploadResult {
   path: string;
   fileName: string;
   hash?: string;
+  alreadyExists?: boolean;
 }
 
 export interface StorageFile {
@@ -200,6 +201,7 @@ export async function uploadPdf(
       path: filePath,
       fileName: `${fileHash}.pdf`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -222,6 +224,7 @@ export async function uploadPdf(
     path: filePath,
     fileName: `${fileHash}.pdf`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 
@@ -271,6 +274,7 @@ export async function uploadImage(
       path: filePath,
       fileName: `${fileHash}.${extension}`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -293,6 +297,7 @@ export async function uploadImage(
     path: filePath,
     fileName: `${fileHash}.${extension}`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 
@@ -369,6 +374,7 @@ export async function uploadDocument(
       path: filePath,
       fileName: `${fileHash}.${extension}`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -398,6 +404,7 @@ export async function uploadDocument(
     path: filePath,
     fileName: `${fileHash}.${extension}`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 

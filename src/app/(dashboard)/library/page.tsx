@@ -677,6 +677,7 @@ export default function LibraryPage() {
 
       const uploadResult = await uploadResponse.json();
       const uploadedFileId = uploadResult?.fileId as string | undefined;
+      const alreadyExists = uploadResult?.uploadResult?.alreadyExists === true;
 
       if (currentFolderId && uploadedFileId) {
         await fetch("/api/folders", {
@@ -692,7 +693,7 @@ export default function LibraryPage() {
       }
 
       await loadLibraryData(userId);
-      showToast("File uploaded successfully", "success");
+      showToast(alreadyExists ? "File already exists in library" : "File uploaded successfully", "success");
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Failed to upload file";
       setError(message);

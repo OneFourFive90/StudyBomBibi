@@ -335,6 +335,9 @@ export default function GeneratorPage() {
           : `Uploading ${filesToUpload[0]?.name || "file"}...`
       );
 
+      let existingCount = 0;
+      let uploadedCount = 0;
+
       for (const file of filesToUpload) {
         const formData = new FormData();
         formData.append("file", file);
@@ -348,6 +351,14 @@ export default function GeneratorPage() {
         if (!response.ok) {
           const data = await response.json();
           throw new Error(data.error || `Failed to upload ${file.name}`);
+        }
+
+        const payload = await response.json();
+        const alreadyExists = payload?.uploadResult?.alreadyExists === true;
+        if (alreadyExists) {
+          existingCount += 1;
+        } else {
+          uploadedCount += 1;
         }
       }
 
@@ -373,12 +384,15 @@ export default function GeneratorPage() {
         });
       }
 
-      showToast(
-        filesToUpload.length > 1
-          ? `${filesToUpload.length} files uploaded successfully`
-          : "File uploaded successfully",
-        "success"
-      );
+      if (filesToUpload.length === 1) {
+        showToast(existingCount === 1 ? "File already exists in library" : "File uploaded successfully", "success");
+      } else if (existingCount > 0 && uploadedCount > 0) {
+        showToast(`${uploadedCount} uploaded, ${existingCount} already existed`, "success");
+      } else if (existingCount === filesToUpload.length) {
+        showToast(`${existingCount} files already exist in library`, "success");
+      } else {
+        showToast(`${uploadedCount} files uploaded successfully`, "success");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to upload files";
       setErrorMessage(message);
@@ -603,7 +617,7 @@ export default function GeneratorPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Content Generator</h1>
+          <h1 className="text-2xl font-bold">Exam Generator</h1>
         </div>
       </div>
 
