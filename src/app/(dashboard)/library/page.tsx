@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,14 +176,17 @@ export default function LibraryPage() {
     return material.title.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  async function loadLibraryData(activeUserId: string | null): Promise<void> {
-    if (!activeUserId) return;
+  async function loadLibraryData(): Promise<void> {
     setLoading(true);
     setError("");
     try {
       const [foldersResponse, filesResponse] = await Promise.all([
-        fetch(`/api/folders?action=get-all&userId=${encodeURIComponent(activeUserId)}`),
-        fetch(`/api/get-files?userId=${encodeURIComponent(activeUserId)}`),
+        authenticatedFetch(`/api/folders?action=get-all`, {
+          method: "GET",
+        }),
+        authenticatedFetch(`/api/get-files`, {
+          method: "GET",
+        }),
       ]);
 
       if (!foldersResponse.ok) {
@@ -216,7 +220,7 @@ export default function LibraryPage() {
 
   useEffect(() => {
     if (userId) {
-      void loadLibraryData(userId);
+      void loadLibraryData();
     }
   }, [userId]);
 
@@ -316,11 +320,10 @@ export default function LibraryPage() {
   const saveNoteContent = async (fileId: string, content: string): Promise<boolean> => {
     try {
       setNoteSaveStatus("saving");
-      const response = await fetch("/api/notes/update", {
+      const response = await authenticatedFetch("/api/notes/update", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
           fileId,
           content,
         }),
@@ -460,17 +463,15 @@ export default function LibraryPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    if (!userId) return;
 
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "create-folder",
-          userId,
           name: newFolderName,
           parentFolderId: currentFolderId,
         }),
@@ -483,7 +484,7 @@ export default function LibraryPage() {
 
       setNewFolderName("");
       setIsCreatingFolder(false);
-      await loadLibraryData(userId);
+      await loadLibraryData();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create folder");
       setLoading(false);
@@ -491,19 +492,17 @@ export default function LibraryPage() {
   };
 
   const handleRenameFolder = async (folderId: string, newName: string) => {
-    if (!userId) return;
     const trimmedName = newName.trim();
     if (!trimmedName) return;
 
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "rename-folder",
-          userId,
           folderId,
           name: trimmedName,
         }),
@@ -514,7 +513,7 @@ export default function LibraryPage() {
         throw new Error(data.error || "Failed to rename folder");
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       showToast("Folder name updated successfully", "success");
     } catch (renameError) {
       const message = renameError instanceof Error ? renameError.message : "Failed to rename folder";
@@ -525,16 +524,14 @@ export default function LibraryPage() {
   };
 
   const handleMoveFolder = async (folderId: string, targetFolderId: string | null) => {
-    if (!userId) return;
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "move-folder",
-          userId,
           folderId,
           parentFolderId: targetFolderId,
         }),
@@ -545,7 +542,7 @@ export default function LibraryPage() {
         throw new Error(data.error || "Failed to move folder");
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       showToast("Folder moved successfully", "success");
     } catch (moveError) {
       const message = moveError instanceof Error ? moveError.message : "Failed to move folder";
@@ -556,16 +553,14 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFolder = async (folderId: string) => {
-    if (!userId) return;
     setLoading(true);
     setError("");
     showLoading("Deleting folder...");
     try {
       const url = new URL("/api/folders", window.location.origin);
-      url.searchParams.set("userId", userId);
       url.searchParams.set("folderId", folderId);
 
-      const response = await fetch(url.toString(), { method: "DELETE" });
+      const response = await authenticatedFetch(url.toString(), { method: "DELETE" });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error || "Failed to delete folder");
@@ -574,7 +569,7 @@ export default function LibraryPage() {
       if (currentFolderId === folderId) {
         setCurrentFolderId(null);
       }
-      await loadLibraryData(userId);
+      await loadLibraryData();
       setSelectedItem(null);
       showToast("Folder deleted successfully", "success");
     } catch (deleteError) {
@@ -591,7 +586,6 @@ export default function LibraryPage() {
   };
 
   const handleConfirmCreateNote = async () => {
-    if (!userId) return;
     const noteName = pendingNewNoteName?.trim();
     if (!noteName) return;
 
@@ -601,11 +595,10 @@ export default function LibraryPage() {
     showLoading("Creating note...");
 
     try {
-      const response = await fetch("/api/notes/create", {
+      const response = await authenticatedFetch("/api/notes/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
           title: noteName,
           content: "",
           folderId: currentFolderId,
@@ -618,7 +611,7 @@ export default function LibraryPage() {
       }
 
       const payload = await response.json();
-      await loadLibraryData(userId);
+      await loadLibraryData();
       if (payload?.note?.id) {
         setSelectedItem({
           id: payload.note.id,
@@ -657,7 +650,6 @@ export default function LibraryPage() {
   };
 
   const handleConfirmUpload = async () => {
-    if (!userId) return;
     const file = pendingUploadFile;
     if (!file) return;
 
@@ -671,9 +663,8 @@ export default function LibraryPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("userId", userId);
 
-      const uploadResponse = await fetch("/api/upload-file", {
+      const uploadResponse = await authenticatedFetch("/api/upload-file", {
         method: "POST",
         body: formData,
       });
@@ -687,19 +678,18 @@ export default function LibraryPage() {
       const uploadedFileId = uploadResult?.fileId as string | undefined;
 
       if (currentFolderId && uploadedFileId) {
-        await fetch("/api/folders", {
+        await authenticatedFetch("/api/folders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "move-file",
-            userId,
             fileId: uploadedFileId,
             folderId: currentFolderId,
           }),
         });
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       showToast("File uploaded successfully", "success");
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : "Failed to upload file";
@@ -710,16 +700,14 @@ export default function LibraryPage() {
   };
 
   const handleMoveFile = async (fileId: string, targetFolderId: string | null) => {
-    if (!userId) return;
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "move-file",
-          userId,
           fileId,
           folderId: targetFolderId,
         }),
@@ -730,7 +718,7 @@ export default function LibraryPage() {
         throw new Error(data.error || "Failed to move file");
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       setSelectedItem(null);
       showToast("File moved successfully", "success");
     } catch (moveError) {
@@ -742,19 +730,17 @@ export default function LibraryPage() {
   };
 
   const handleRenameFile = async (fileId: string, currentName: string) => {
-    if (!userId) return;
     const trimmedName = currentName.trim();
     if (!trimmedName) return;
 
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "rename-file",
-          userId,
           fileId,
           name: trimmedName,
         }),
@@ -765,7 +751,7 @@ export default function LibraryPage() {
         throw new Error(data.error || "Failed to rename file");
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       setSelectedItem((prev) => {
         if (!prev || prev.source !== "file" || prev.id !== fileId) {
           return prev;
@@ -782,17 +768,15 @@ export default function LibraryPage() {
   };
 
   const handleDeleteFile = async (fileId: string) => {
-    if (!userId) return;
     setLoading(true);
     setError("");
     showLoading("Deleting file...");
     try {
-      const response = await fetch("/api/folders", {
+      const response = await authenticatedFetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "delete-file",
-          userId,
           fileId,
         }),
       });
@@ -802,7 +786,7 @@ export default function LibraryPage() {
         throw new Error(data.error || "Failed to delete file");
       }
 
-      await loadLibraryData(userId);
+      await loadLibraryData();
       setSelectedItem(null);
       showToast("File deleted successfully", "success");
     } catch (deleteError) {

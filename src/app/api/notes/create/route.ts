@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadString } from "firebase/storage";
 import { db, storage } from "@/lib/firebase/firebase";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 interface CreateNoteRequest {
-  userId?: string;
   title?: string;
   content?: string;
   folderId?: string | null;
@@ -21,13 +21,21 @@ function normalizeNoteFileName(title: string): string {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as CreateNoteRequest;
-    const userId = body.userId?.trim();
-    const folderId = body.folderId ?? null;
-
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
     }
+
+    const body = (await req.json()) as CreateNoteRequest;
+    const folderId = body.folderId ?? null;
 
     const fileName = normalizeNoteFileName(body.title || "New Note");
     const noteContent = body.content ?? "";

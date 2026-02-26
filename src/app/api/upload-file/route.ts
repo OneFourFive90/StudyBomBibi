@@ -6,6 +6,7 @@ and then call function from lib/userFileManagement/uploadFile.ts [upload file to
 */
 import { NextResponse } from "next/server";
 import { uploadFile } from "@/lib/firebase/userFileManagement/uploadFile";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -42,17 +43,25 @@ function normalizeFileMimeType(file: File): string {
 
 export async function POST(req: Request) {
   try {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
     // Parse the incoming form data
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    const userId = formData.get("userId") as string;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: "No userId provided" }, { status: 400 });
     }
 
     const normalizedMimeType = normalizeFileMimeType(file);

@@ -3,16 +3,20 @@ Get all files for a user
 */
 import { NextResponse } from "next/server";
 import { getUserFiles } from "@/lib/firebase/userFileManagement/readFiles";
+import { verifyFirebaseIdToken } from "@/lib/firebase/verifyIdToken";
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId");
-
-    if (!userId) {
+    // Verify ID token
+    const authHeader = req.headers.get("Authorization");
+    let userId: string;
+    try {
+      const decodedToken = await verifyFirebaseIdToken(authHeader);
+      userId = decodedToken.uid;
+    } catch (error) {
       return NextResponse.json(
-        { error: "userId is required" },
-        { status: 400 }
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
       );
     }
 
