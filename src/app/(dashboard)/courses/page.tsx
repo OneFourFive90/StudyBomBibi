@@ -23,33 +23,38 @@ import {
 import Link from "next/link";
 
 // Types
-type StudyTask = {
+type Lesson = {
   id: string;
   title: string;
   duration: number; // minutes
   completed: boolean;
+  contentType: "video" | "text" | "document" | "quiz";
 };
 
-type StudyDay = {
-  day: number;
-  topic: string;
-  tasks: StudyTask[];
+type Module = {
+  id: string;
+  title: string;
+  lessons: Lesson[];
 };
 
-type StudyWeek = {
-  week: number;
-  days: StudyDay[];
-};
-
-type Plan = {
+type Course = {
   id: string;
   title: string;
   description: string;
+  instructor: string;
+  rating: number;
+  students: number;
   progress: number;
   totalHours: number;
   format: "Text" | "Image" | "Video";
-  materials: string[]; 
-  schedule?: StudyWeek[];
+  materials: string[];
+  customPrompt?: string;
+  preferences: {
+    difficulty: "Beginner" | "Intermediate" | "Advanced";
+    pace: "Slow" | "Normal" | "Fast";
+    focusAreas: string[];
+  };
+  modules: Module[];
 };
 
 type Material = {
@@ -71,71 +76,72 @@ const mockLibraryMaterials: Material[] = [
   { id: "6", title: "React Hooks Cheat Sheet", type: "File", parentId: null },
 ];
 
-export default function StudyPlannerPage() {
+export default function AICoursePage() {
   // --- State ---
-  const [plans, setPlans] = useState<Plan[]>([
+  const [courses, setCourses] = useState<Course[]>([
     {
-      id: "p1",
+      id: "c1",
       title: "Introduction to Computer Science",
-      description: "Learn the basics of computer science, including algorithms, data structures, and more.",
+      description: "AI-generated personalized course covering CS fundamentals based on your selected materials.",
+      instructor: "AI Assistant",
+      rating: 4.8,
+      students: 1240,
       progress: 45,
       totalHours: 20,
       format: "Video",
       materials: ["1", "3"],
-      schedule: [
+      customPrompt: "Focus on practical applications and real-world examples",
+      preferences: {
+        difficulty: "Beginner",
+        pace: "Normal",
+        focusAreas: ["Algorithms", "Data Structures"]
+      },
+      modules: [
         {
-          week: 1,
-          days: [
-            {
-              day: 1,
-              topic: "Getting Started",
-              tasks: [
-                { id: "t1", title: "Watch Intro Video", duration: 15, completed: true },
-                { id: "t2", title: "Read Chapter 1", duration: 45, completed: true }
-              ]
-            },
-            {
-              day: 2,
-              topic: "Basic Algorithms",
-              tasks: [
-                { id: "t3", title: "Sorting Algorithms", duration: 60, completed: false },
-                { id: "t4", title: "Quiz 1", duration: 20, completed: false }
-              ]
-            }
-          ]
-        },
-        {
-          week: 2,
-          days: [
-             {
-              day: 1,
-              topic: "Data Structures - Arrays",
-              tasks: [
-                { id: "t5", title: "Dynamic Arrays", duration: 30, completed: false },
-                { id: "t6", title: "Practice Problem Set", duration: 60, completed: false }
-              ]
-            }
+          id: "m1",
+          title: "Fundamentals",
+          lessons: [
+            { id: "l1", title: "What is Computer Science?", duration: 15, completed: true, contentType: "video" },
+            { id: "l2", title: "Basic Concepts & History", duration: 45, completed: true, contentType: "video" }
           ]
         }
-      ] 
+      ]
     },
     {
-      id: "p2",
+      id: "c2",
       title: "Advanced Mathematics",
-      description: "Dive deep into calculus, linear algebra, and discrete mathematics.",
+      description: "Personalized mathematics course tailored to your learning style and materials.",
+      instructor: "AI Assistant",
+      rating: 4.9,
+      students: 856,
       progress: 12,
       totalHours: 35,
       format: "Text",
-      materials: ["2"]
+      materials: ["2"],
+      preferences: {
+        difficulty: "Advanced",
+        pace: "Fast",
+        focusAreas: ["Calculus", "Linear Algebra"]
+      },
+      modules: []
     },
     {
-      id: "p3",
+      id: "c3",
       title: "Physics for Engineers",
-      description: "Understand the fundamental principles of physics applied to engineering problems.",
+      description: "Interactive physics course generated from your engineering textbooks and notes.",
+      instructor: "AI Assistant",
+      rating: 4.7,
+      students: 2100,
       progress: 78,
       totalHours: 25,
       format: "Image",
-      materials: ["4", "5"]
+      materials: ["4", "5"],
+      preferences: {
+        difficulty: "Intermediate",
+        pace: "Normal",
+        focusAreas: ["Mechanics", "Thermodynamics"]
+      },
+      modules: []
     },
   ]);
 
@@ -145,48 +151,67 @@ export default function StudyPlannerPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   
   // Form State
-  const [newPlan, setNewPlan] = useState<{
+  const [newCourse, setNewCourse] = useState<{
     topic: string;
-    description: string;
+    customPrompt: string;
     availability: string;
     format: "Text" | "Image" | "Video";
+    difficulty: "Beginner" | "Intermediate" | "Advanced";
+    pace: "Slow" | "Normal" | "Fast";
+    focusAreas: string;
     selectedMaterials: string[];
   }>({
     topic: "",
-    description: "",
+    customPrompt: "",
     availability: "",
     format: "Text",
+    difficulty: "Beginner",
+    pace: "Normal",
+    focusAreas: "",
     selectedMaterials: [],
   });
 
   // --- Handlers ---
 
-  const handleCreatePlan = () => {
-    // Generate a new plan object
-    const createdPlan: Plan = {
-      id: `p${plans.length + 1}`,
-      title: newPlan.topic || "Untitled Plan",
-      description: newPlan.description || `Study plan for ${newPlan.topic} (${newPlan.format})`,
+  const handleCreateCourse = () => {
+    // Generate a new course object
+    const createdCourse: Course = {
+      id: `c${courses.length + 1}`,
+      title: newCourse.topic || "Untitled Course",
+      description: `AI-generated personalized course for ${newCourse.topic}${newCourse.customPrompt ? ` - ${newCourse.customPrompt}` : ''}`,
+      instructor: "AI Assistant",
+      rating: 0,
+      students: 0,
       progress: 0,
-      totalHours: parseInt(newPlan.availability) || 10,
-      format: newPlan.format,
-      materials: newPlan.selectedMaterials,
+      totalHours: parseInt(newCourse.availability) || 10,
+      format: newCourse.format,
+      materials: newCourse.selectedMaterials,
+      customPrompt: newCourse.customPrompt,
+      preferences: {
+        difficulty: newCourse.difficulty,
+        pace: newCourse.pace,
+        focusAreas: newCourse.focusAreas.split(',').map(s => s.trim()).filter(Boolean)
+      },
+      modules: []
     };
 
-    setPlans([createdPlan, ...plans]);
+    setCourses([createdCourse, ...courses]);
     setIsCreating(false);
     // Reset form
-    setNewPlan({
+    setNewCourse({
       topic: "",
-      description: "",
+      customPrompt: "",
       availability: "",
       format: "Text",
+      difficulty: "Beginner",
+      pace: "Normal",
+      focusAreas: "",
       selectedMaterials: [],
     });
   };
 
   const toggleMaterialSelection = (id: string) => {
-    setNewPlan(prev => {
+    setNewCourse(prev => {
       const isSelected = prev.selectedMaterials.includes(id);
       if (isSelected) {
         return { ...prev, selectedMaterials: prev.selectedMaterials.filter(m => m !== id) };
@@ -202,69 +227,99 @@ export default function StudyPlannerPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Study Plans</h1>
-          <p className="text-muted-foreground mt-2">Manage and track your AI-generated study schedules.</p>
+          <h1 className="text-3xl font-bold tracking-tight">My AI Courses</h1>
+          <p className="text-muted-foreground mt-2">Create personalized AI-generated courses from your materials with custom prompts and preferences.</p>
         </div>
         <Button className="gap-2" onClick={() => setIsCreating(true)}>
-          <Plus className="h-4 w-4" />
-          Create New Plan
+          <Sparkles className="h-4 w-4" />
+          Generate Course
         </Button>
       </div>
 
-      {/* Plans Grid */}
+      {/* Courses Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {plans.map((plan) => (
-          <Card key={plan.id} className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ 
-            borderLeftColor: plan.format === 'Video' ? '#3b82f6' : plan.format === 'Image' ? '#10b981' : '#f59e0b' 
-          }}>
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <CardTitle className="text-xl">{plan.title}</CardTitle>
-                <div className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full uppercase font-semibold">
-                  {plan.format}
+        {courses.map((course) => {
+          const completedLessons = course.modules.reduce((acc, mod) => acc + mod.lessons.filter(l => l.completed).length, 0);
+          const totalLessons = course.modules.reduce((acc, mod) => acc + mod.lessons.length, 0);
+          
+          return (
+            <Card key={course.id} className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ 
+              borderLeftColor: course.format === 'Video' ? '#3b82f6' : course.format === 'Image' ? '#10b981' : '#f59e0b' 
+            }}>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-xl">{course.title}</CardTitle>
+                  <div className="flex flex-col gap-1 items-end">
+                    <div className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full uppercase font-semibold">
+                      {course.format}
+                    </div>
+                    <div className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full">
+                      {course.preferences.difficulty}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <CardDescription className="line-clamp-2 mt-2">{plan.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-4">
-                
-                {/* Progress Bar Mockup */}
-                <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-primary h-full rounded-full transition-all duration-500 ease-in-out" 
-                    style={{ width: `${plan.progress}%` }}
-                  />
-                </div>
+                <CardDescription className="line-clamp-2 mt-2">{course.description}</CardDescription>
+                {course.customPrompt && (
+                  <div className="text-xs bg-blue-50 text-blue-800 p-2 rounded border border-blue-200 mt-2">
+                    <span className="font-medium">Custom:</span> {course.customPrompt}
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-4">
+                  {/* Course Stats */}
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="text-center">
+                      <div className="font-semibold">{course.modules.length}</div>
+                      <div className="text-muted-foreground">Modules</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold">{totalLessons}</div>
+                      <div className="text-muted-foreground">Lessons</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-semibold">{course.totalHours}h</div>
+                      <div className="text-muted-foreground">Duration</div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                    <div 
+                      className="bg-primary h-full rounded-full transition-all duration-500 ease-in-out" 
+                      style={{ width: `${course.progress}%` }}
+                    />
+                  </div>
 
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span className="font-medium">{plan.progress}% Completed</span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" /> {plan.totalHours}h
-                  </span>
-                </div>
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span className="font-medium">{course.progress}% Completed</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" /> {course.preferences.pace}
+                    </span>
+                  </div>
 
-                <div className="flex gap-2 mt-2">
-                  <Button variant="outline" size="sm" className="w-full" asChild>
-                    <Link href={`/study-planner/${plan.id}`}>View Schedule</Link>
-                  </Button>
-                  <Button size="sm" className="w-full">Continue</Button>
+                  <div className="flex gap-2 mt-2">
+                    <Button variant="outline" size="sm" className="w-full" asChild>
+                      <Link href={`/courses/${course.id}`}>View Course</Link>
+                    </Button>
+                    <Button size="sm" className="w-full">Continue</Button>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* --- Create Plan Modal (Overlay) --- */}
+      {/* --- Create Course Modal (Overlay) --- */}
       {isCreating && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border text-card-foreground shadow-lg rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-card border text-card-foreground shadow-lg rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
             
             <div className="flex items-center justify-between p-6 border-b">
               <div>
-                <h2 className="text-2xl font-semibold">Create Study Plan</h2>
-                <p className="text-sm text-muted-foreground">Configure your AI-generated study schedule based on your needs.</p>
+                <h2 className="text-2xl font-semibold">Generate AI Course</h2>
+                <p className="text-sm text-muted-foreground">Create a personalized course from your materials with custom AI prompts and preferences.</p>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setIsCreating(false)}>
                 <X className="h-4 w-4" />
@@ -273,42 +328,44 @@ export default function StudyPlannerPage() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               
-              {/* Step 1: Basic Info */}
+              {/* Step 1: Basic Course Info */}
               <div className="grid gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="topic">Topic / Study Goal</Label>
+                  <Label htmlFor="topic">Course Topic</Label>
                   <Input 
                     id="topic" 
-                    placeholder="e.g. Master Linear Algebra" 
-                    value={newPlan.topic}
-                    onChange={(e) => setNewPlan({...newPlan, topic: e.target.value})}
+                    placeholder="e.g. Master Linear Algebra, Introduction to Machine Learning" 
+                    value={newCourse.topic}
+                    onChange={(e) => setNewCourse({...newCourse, topic: e.target.value})}
                   />
                 </div>
                 
                 <div className="grid gap-2">
-                  <Label htmlFor="description">Description (Optional)</Label>
+                  <Label htmlFor="customPrompt">Custom AI Prompt (Optional)</Label>
                   <Textarea 
-                    id="description" 
-                    placeholder="Describe specific areas to focus on..." 
-                    value={newPlan.description}
-                    onChange={(e) => setNewPlan({...newPlan, description: e.target.value})}
+                    id="customPrompt" 
+                    placeholder="e.g. Focus on practical applications, include lots of examples, make it beginner-friendly..."
+                    rows={3}
+                    value={newCourse.customPrompt}
+                    onChange={(e) => setNewCourse({...newCourse, customPrompt: e.target.value})}
                   />
+                  <p className="text-xs text-muted-foreground">Tell the AI how you want your course structured and what to emphasize.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="availability">Weekly Availability (Hours)</Label>
+                    <Label htmlFor="availability">Weekly Hours</Label>
                     <Input 
                       id="availability" 
                       type="number" 
                       placeholder="e.g. 10" 
-                      value={newPlan.availability}
-                      onChange={(e) => setNewPlan({...newPlan, availability: e.target.value})}
+                      value={newCourse.availability}
+                      onChange={(e) => setNewCourse({...newCourse, availability: e.target.value})}
                     />
                   </div>
                   
                   <div className="grid gap-2">
-                    <Label>Preferred Format</Label>
+                    <Label>Content Format</Label>
                     <div className="flex items-center space-x-4 pt-2">
                         <div className="flex items-center space-x-2">
                           <input 
@@ -316,8 +373,8 @@ export default function StudyPlannerPage() {
                               id="fmt-text" 
                               name="format" 
                               value="Text" 
-                              checked={newPlan.format === "Text"}
-                              onChange={() => setNewPlan({...newPlan, format: "Text"})}
+                              checked={newCourse.format === "Text"}
+                              onChange={() => setNewCourse({...newCourse, format: "Text"})}
                               className="radio w-4 h-4 border-primary text-primary"
                           />
                           <Label htmlFor="fmt-text">Text</Label>
@@ -328,8 +385,8 @@ export default function StudyPlannerPage() {
                               id="fmt-image" 
                               name="format" 
                               value="Image" 
-                              checked={newPlan.format === "Image"}
-                              onChange={() => setNewPlan({...newPlan, format: "Image"})}
+                              checked={newCourse.format === "Image"}
+                              onChange={() => setNewCourse({...newCourse, format: "Image"})}
                               className="radio w-4 h-4 border-primary text-primary"
                           />
                           <Label htmlFor="fmt-image">Image</Label>
@@ -340,8 +397,8 @@ export default function StudyPlannerPage() {
                               id="fmt-video" 
                               name="format" 
                               value="Video" 
-                              checked={newPlan.format === "Video"}
-                              onChange={() => setNewPlan({...newPlan, format: "Video"})}
+                              checked={newCourse.format === "Video"}
+                              onChange={() => setNewCourse({...newCourse, format: "Video"})}
                               className="radio w-4 h-4 border-primary text-primary"
                           />
                           <Label htmlFor="fmt-video">Video</Label>
@@ -349,13 +406,57 @@ export default function StudyPlannerPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Learning Preferences */}
+                <div className="space-y-4 pt-4 border-t">
+                  <h3 className="font-medium">Learning Preferences</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Difficulty Level</Label>
+                      <select 
+                        className="w-full p-2 border rounded-md text-sm" 
+                        value={newCourse.difficulty}
+                        onChange={(e) => setNewCourse({...newCourse, difficulty: e.target.value as "Beginner" | "Intermediate" | "Advanced"})}
+                      >
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
+                      </select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Learning Pace</Label>
+                      <select 
+                        className="w-full p-2 border rounded-md text-sm" 
+                        value={newCourse.pace}
+                        onChange={(e) => setNewCourse({...newCourse, pace: e.target.value as "Slow" | "Normal" | "Fast"})}
+                      >
+                        <option value="Slow">Slow & Detailed</option>
+                        <option value="Normal">Normal</option>
+                        <option value="Fast">Fast & Concise</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="focusAreas">Focus Areas (Optional)</Label>
+                    <Input 
+                      id="focusAreas" 
+                      placeholder="e.g. Practical Applications, Theory, Problem Solving (comma-separated)" 
+                      value={newCourse.focusAreas}
+                      onChange={(e) => setNewCourse({...newCourse, focusAreas: e.target.value})}
+                    />
+                    <p className="text-xs text-muted-foreground">Specific topics or skills you want to emphasize in this course.</p>
+                  </div>
+                </div>
               </div>
 
               {/* Step 2: Select Materials (Split View) */}
               <div className="space-y-4 pt-4 border-t flex-1 flex flex-col min-h-0">
                 <div>
-                  <h3 className="text-lg font-medium mb-1">Select Study Materials</h3>
-                  <p className="text-sm text-muted-foreground">Choose files or folders from your library to include in this plan.</p>
+                  <h3 className="text-lg font-medium mb-1">Reference Materials</h3>
+                  <p className="text-sm text-muted-foreground">Select files, documents, or folders that the AI should reference when creating your course.</p>
                 </div>
 
                 <div className="flex border rounded-md h-[300px] overflow-hidden">
@@ -382,7 +483,7 @@ export default function StudyPlannerPage() {
                             {mockLibraryMaterials
                                 .filter(m => m.parentId === currentFolderId)
                                 .map(material => {
-                                    const isSelected = newPlan.selectedMaterials.includes(material.id);
+                                    const isSelected = newCourse.selectedMaterials.includes(material.id);
                                     return (
                                         <div 
                                             key={material.id}
@@ -460,10 +561,10 @@ export default function StudyPlannerPage() {
                             Selected
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                             {newPlan.selectedMaterials.length === 0 ? (
+                             {newCourse.selectedMaterials.length === 0 ? (
                                 <p className="text-xs text-muted-foreground text-center mt-10">No materials selected</p>
                              ) : (
-                                newPlan.selectedMaterials.map(id => {
+                                newCourse.selectedMaterials.map(id => {
                                     const item = mockLibraryMaterials.find(m => m.id === id);
                                     if (!item) return null;
                                     return (
@@ -485,12 +586,18 @@ export default function StudyPlannerPage() {
               </div>
             </div>
 
-            <div className="p-6 border-t bg-muted/20 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsCreating(false)}>Cancel</Button>
-              <Button onClick={handleCreatePlan} disabled={!newPlan.topic}>
-                <Sparkles className="mr-2 h-4 w-4" />
-                Generate Plan
-              </Button>
+            <div className="p-6 border-t bg-muted/20 flex justify-between gap-2">
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <Sparkles className="h-3 w-3" />
+                <span>AI will analyze your materials and preferences to generate a personalized course</span>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsCreating(false)}>Cancel</Button>
+                <Button onClick={handleCreateCourse} disabled={!newCourse.topic}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate Course
+                </Button>
+              </div>
             </div>
           </div>
         </div>

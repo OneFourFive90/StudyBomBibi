@@ -77,7 +77,7 @@ export default function DashboardPage() {
               <div className="flex items-center">
                 <div className="ml-4 space-y-1">
                   <p className="text-sm font-medium leading-none">Started &quot;Advanced Calculus&quot; Plan</p>
-                  <p className="text-sm text-muted-foreground">Personalized Learning System</p>
+                  <p className="text-sm text-muted-foreground">AI Courses</p>
                 </div>
                  <div className="ml-auto font-medium text-xs text-muted-foreground flex items-center gap-1">
                    <Clock className="w-3 h-3" /> 1d ago
