@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase/firebase";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,6 +87,8 @@ interface PendingMoveAction {
   currentParentId: string | null;
 }
 
+type DocumentPreviewKind = "none" | "pdf" | "image" | "text" | "web";
+
 const TEST_USER_ID = "test-user-123";
 
 function mapFileType(mimeType: string): MaterialType {
@@ -149,6 +152,10 @@ export default function LibraryPage() {
   const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
   const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
   const [noteBaselineContent, setNoteBaselineContent] = useState("");
+  const [docPreviewText, setDocPreviewText] = useState("");
+  const [docPreviewStatus, setDocPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [docPreviewError, setDocPreviewError] = useState("");
+  const [selectedDocumentPreviewKind, setSelectedDocumentPreviewKind] = useState<DocumentPreviewKind>("none");
   const activeNoteIdRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -223,6 +230,83 @@ export default function LibraryPage() {
       setNoteSaveStatus("saved");
       activeNoteIdRef.current = selectedItem.id;
     }
+  }, [selectedItem]);
+
+  useEffect(() => {
+    if (!selectedItem || selectedItem.type === "Note") {
+      setSelectedDocumentPreviewKind("none");
+      setDocPreviewText("");
+      setDocPreviewStatus("idle");
+      setDocPreviewError("");
+      return;
+    }
+
+    if (!selectedItem.downloadURL) {
+      setSelectedDocumentPreviewKind("none");
+      setDocPreviewText("");
+      setDocPreviewStatus("idle");
+      setDocPreviewError("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadTextPreview = async () => {
+      setDocPreviewStatus("idle");
+      setDocPreviewError("");
+      setDocPreviewText("");
+
+      try {
+        const params = new URLSearchParams({
+          url: selectedItem.downloadURL as string,
+          mimeType: selectedItem.mimeType || "",
+          fileName: selectedItem.title,
+        });
+
+        const response = await fetch(
+          `/api/file-preview?${params.toString()}`
+        );
+
+        const data = await response.json();
+        if (cancelled) return;
+
+        const nextKind = (data?.kind as DocumentPreviewKind) || "web";
+        setSelectedDocumentPreviewKind(nextKind);
+
+        if (nextKind !== "text") {
+          setDocPreviewText("");
+          setDocPreviewStatus("idle");
+          setDocPreviewError("");
+          return;
+        }
+
+        setDocPreviewStatus("loading");
+
+        if (!response.ok || data?.error) {
+          throw new Error(data?.error || "Unable to fetch file content");
+        }
+
+        const text = typeof data?.text === "string" ? data.text : "";
+
+        const maxPreviewLength = 120_000;
+        const previewContent = text.length > maxPreviewLength ? `${text.slice(0, maxPreviewLength)}\n\n[Preview truncated]` : text;
+
+        setDocPreviewText(previewContent);
+        setDocPreviewStatus("ready");
+      } catch {
+        if (cancelled) return;
+        setSelectedDocumentPreviewKind("text");
+        setDocPreviewStatus("error");
+        setDocPreviewText("");
+        setDocPreviewError("Preview unavailable for this file. Use Open File to view it directly.");
+      }
+    };
+
+    void loadTextPreview();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedItem]);
 
   const saveNoteContent = async (fileId: string, content: string): Promise<boolean> => {
@@ -1262,25 +1346,61 @@ export default function LibraryPage() {
                   />
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 text-muted-foreground p-8 border-2 border-dashed rounded-lg">
-                  <FileText className="h-16 w-16 opacity-20" />
-                  <div>
-                    <h3 className="text-lg font-medium text-foreground">Document Preview</h3>
-                    <p className="text-sm mt-1">
-                      Open file: <strong>{selectedItem.title}</strong>
-                    </p>
-                  </div>
-                  {selectedItem.downloadURL ? (
-                    <a href={selectedItem.downloadURL} target="_blank" rel="noreferrer" className="inline-flex">
-                      <Button variant="outline" className="gap-2">
-                        <ExternalLink className="h-4 w-4" /> Open File
-                      </Button>
-                    </a>
-                  ) : (
-                    <Button variant="outline" className="mt-4" disabled>
-                      No preview URL
-                    </Button>
+                <div className="h-full min-h-[380px] border rounded-lg overflow-hidden bg-muted/10">
+                  {!selectedItem.downloadURL && (
+                    <div className="flex flex-col items-center justify-center h-full text-center space-y-4 text-muted-foreground p-8 border-2 border-dashed rounded-lg">
+                      <FileText className="h-16 w-16 opacity-20" />
+                      <div>
+                        <h3 className="text-lg font-medium text-foreground">Document Preview</h3>
+                        <p className="text-sm mt-1">No preview URL available for this file.</p>
+                      </div>
+                    </div>
                   )}
+
+                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "image" && (
+                    <div className="relative w-full h-full min-h-[380px] bg-background">
+                      <Image
+                        src={selectedItem.downloadURL}
+                        alt={selectedItem.title}
+                        fill
+                        unoptimized
+                        className="object-contain"
+                      />
+                    </div>
+                  )}
+
+                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "pdf" && (
+                    <iframe
+                      title={`Preview ${selectedItem.title}`}
+                      src={selectedItem.downloadURL}
+                      className="w-full h-full min-h-[380px]"
+                    />
+                  )}
+
+                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "text" && (
+                    <div className="h-full overflow-auto p-4">
+                      {docPreviewStatus === "loading" && (
+                        <p className="text-sm text-muted-foreground">Loading preview...</p>
+                      )}
+                      {docPreviewStatus === "error" && (
+                        <p className="text-sm text-destructive">{docPreviewError}</p>
+                      )}
+                      {docPreviewStatus === "ready" && (
+                        <pre className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono">
+                          {docPreviewText}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "web" && (
+                    <iframe
+                      title={`Preview ${selectedItem.title}`}
+                      src={selectedItem.downloadURL}
+                      className="w-full h-full min-h-[380px]"
+                    />
+                  )}
+
                 </div>
               )}
             </div>
@@ -1346,6 +1466,18 @@ export default function LibraryPage() {
                 {selectedItem.source === "file" && (
                   <Button variant="outline" size="sm" onClick={() => requestDeleteFile(selectedItem.id)}>
                     Delete
+                  </Button>
+                )}
+                {selectedItem.source === "file" && selectedItem.downloadURL && (
+                  <a href={selectedItem.downloadURL} target="_blank" rel="noreferrer" className="inline-flex">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <ExternalLink className="h-4 w-4" /> Open File
+                    </Button>
+                  </a>
+                )}
+                {selectedItem.source === "file" && !selectedItem.downloadURL && (
+                  <Button variant="outline" size="sm" className="gap-2" disabled>
+                    <ExternalLink className="h-4 w-4" /> Open File
                   </Button>
                 )}
                 <Button size="sm" onClick={() => setSelectedItem(null)}>
