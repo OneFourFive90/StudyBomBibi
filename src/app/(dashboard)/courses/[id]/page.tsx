@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { markdownComponents } from "@/components/markdown-renderers";
+import PresentationPlayer from "@/components/PresentationPlayer";
 
 // Types matching Enhanced Study Plan Assets Schema
 type VideoSegment = {
@@ -745,30 +746,46 @@ export default function CourseDetailPage() {
 
                        {/* Content Body */}
                        <div className="pl-0 md:pl-0">
-                          {/* Video Content */}
+                        {/* Video Content */}
+{/* Video Content */}
                           {activity.type === "video" && (
                             <div className="space-y-4">
                               {activity.video_segments && activity.video_segments.length > 0 ? (
                                 <div className="grid md:grid-cols-2 gap-6">
-                                  {(() => {
-                                    // Find the first slide image asset
-                                    const slideAsset = activity.assets?.find(a => a.type === 'slide_image' && a.segmentIndex === 0);
-                                    const slideUrl = slideAsset ? assetUrls[slideAsset.assetId] : null;
-                                    
-                                    return (
-                                      <div className="aspect-video bg-black rounded-lg flex items-center justify-center group cursor-pointer hover:bg-black/90 transition-colors shadow-lg overflow-hidden">
-                                        {slideUrl ? (
-                                          <img
-                                            src={slideUrl}
-                                            alt="First slide"
-                                            className="w-full h-full object-cover"
-                                          />
-                                        ) : (
-                                          <Play className="h-16 w-16 text-white opacity-80 group-hover:opacity-100 transition-opacity" />
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
+                                  
+                                  {/* LEFT COLUMN: The Video Player */}
+                                  <div className="w-full relative">
+                                    {(() => {
+                                      // 1. Map the segments
+                                      const videoSegmentsForPlayer = activity.video_segments.map((segment, index) => {
+                                        const imageAsset = activity.assets?.find(a => a.type === "slide_image" && a.segmentIndex === index);
+                                        const audioAsset = activity.assets?.find(a => a.type === "script_audio" && a.segmentIndex === index);
+                                        return {
+                                          slide_title: segment.slide_title,
+                                          bullets: segment.bullets,
+                                          script: segment.script,
+                                          imageUrl: imageAsset ? assetUrls[imageAsset.assetId] : "",
+                                          audioUrl: audioAsset ? assetUrls[audioAsset.assetId] : "",
+                                        };
+                                      });
+
+                                      const isReady = videoSegmentsForPlayer.length > 0 && videoSegmentsForPlayer.every(s => s.imageUrl && s.audioUrl);
+
+                                      // Real rendering logic
+                                      if (isReady) {
+                                        return <PresentationPlayer segments={videoSegmentsForPlayer} />;
+                                      } else {
+                                        return (
+                                          <div className="aspect-video bg-muted/30 rounded-xl flex flex-col items-center justify-center border-2 border-dashed w-full">
+                                            <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
+                                            <p className="text-sm font-medium">Assembling your video lesson...</p>
+                                          </div>
+                                        );
+                                      }
+                                    })()}
+                                  </div>
+
+                                  {/* RIGHT COLUMN: Key Concepts */}
                                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                                     <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Key Concepts</h4>
                                     <div className="space-y-3">
