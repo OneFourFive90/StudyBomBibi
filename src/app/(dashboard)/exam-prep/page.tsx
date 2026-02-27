@@ -39,7 +39,7 @@ export default function ExamPrepPage() {
   const filteredExams = exams.filter((exam) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    const modeLabel = exam.mode === "mcq" ? "mcq quiz" : "past year";
+    const modeLabel = exam.mode === "mcq" ? "mcq quiz" : "mock exam";
     return (
       exam.title.toLowerCase().includes(q) ||
       modeLabel.includes(q) ||
@@ -203,15 +203,15 @@ export default function ExamPrepPage() {
     <Card key={exam.id} className="hover:shadow-md transition-shadow bg-card text-card-foreground">
       <CardHeader>
         <div className="flex justify-between items-start gap-2">
-          <div>
-            <CardTitle>{exam.title}</CardTitle>
+          <div className="min-w-0 flex-1 pr-2">
+            <CardTitle className="leading-snug tracking-normal whitespace-normal break-words">{exam.title}</CardTitle>
           </div>
-          <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap shrink-0 ${
             exam.mode === "mcq"
               ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
               : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
           }`}>
-            {exam.mode === "mcq" ? "MCQ Quiz" : "Past Year"}
+            {exam.mode === "mcq" ? "MCQ Quiz" : "Mock Exam"}
           </span>
         </div>
       </CardHeader>
@@ -372,7 +372,7 @@ export default function ExamPrepPage() {
 
             {sortedPastYearExams.length > 0 && (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-muted-foreground">Past Year ({sortedPastYearExams.length})</p>
+                <p className="text-sm font-medium text-muted-foreground">Mock Exam ({sortedPastYearExams.length})</p>
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {sortedPastYearExams.map(renderExamCard)}
                 </div>
