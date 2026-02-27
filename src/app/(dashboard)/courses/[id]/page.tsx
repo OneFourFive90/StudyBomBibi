@@ -774,15 +774,21 @@ export default function CourseDetailPage() {
                                     <div className="space-y-3">
                                       {activity.video_segments?.map((segment, sIdx) => (
                                         <div key={sIdx} className="text-sm p-3 bg-muted/50 rounded-lg">
-                                          <p className="font-medium mb-1">{segment.slide_title}</p>
+                                          <div className="font-medium mb-1">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                              {segment.slide_title || ''}
+                                            </ReactMarkdown>
+                                          </div>
                                           <ul className="text-[10px] text-muted-foreground mb-2 list-disc pl-4">
                                              {segment.bullets?.map((bullet, bIdx) => (
                                                <li key={bIdx}>{bullet}</li>
                                              ))}
                                           </ul>
-                                          <p className="text-muted-foreground text-xs leading-relaxed italic border-l-2 pl-2">
-                                            &quot;{segment.script.substring(0, 100)}&quot;...
-                                          </p>
+                                          <div className="text-muted-foreground text-xs leading-relaxed italic border-l-2 pl-2">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                              {segment.script || ''}
+                                            </ReactMarkdown>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -837,7 +843,11 @@ export default function CourseDetailPage() {
                                        className="w-full max-w-2xl rounded shadow-md mb-4 object-cover"
                                      />
                                      {activity.image_description && (
-                                       <p className="text-sm text-center text-muted-foreground max-w-lg">{activity.image_description}</p>
+                                       <div className="text-sm text-center text-muted-foreground max-w-lg prose-sm">
+                                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                                           {activity.image_description}
+                                         </ReactMarkdown>
+                                       </div>
                                      )}
                                    </>
                                  ) : (

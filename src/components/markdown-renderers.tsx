@@ -10,12 +10,23 @@ export const markdownComponents = {
   ol: ({ node, ...props }: any) => <ol className="list-decimal list-outside space-y-2 mb-4 ml-6" {...props} />,
   li: ({ node, ...props }: any) => <li className="text-foreground" {...props} />,
   blockquote: ({ node, ...props }: any) => <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground my-4" {...props} />,
-  code: ({ node, inline, ...props }: any) =>
-    inline ? (
-      <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props} />
-    ) : (
-      <code className="block bg-muted/50 p-4 rounded-lg overflow-x-auto mb-4 text-sm font-mono text-foreground" {...props} />
-    ),
+  code: ({ node, inline, className, children, ...props }: any) => {
+    const isInline = typeof inline === 'boolean' ? inline : !className;
+    if (isInline) {
+      return (
+        <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <pre className="mb-4 overflow-x-auto rounded-lg">
+        <code className={`block bg-muted/50 p-4 text-sm font-mono text-foreground ${className || ''}`} {...props}>
+          {children}
+        </code>
+      </pre>
+    );
+  },
   table: ({ node, children, ...props }: any) => (
     <div className="my-3 overflow-x-auto rounded-md border">
       <table {...props} className={`w-full border-collapse text-sm ${props.className || ''}`}>{children}</table>

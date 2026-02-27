@@ -7,7 +7,7 @@ import * as path from "path";
  * Cleans JSON string by properly escaping control characters
  * Uses character-by-character parsing to respect escape sequences
  */
-function cleanJsonString(jsonStr: string): string {
+export function cleanJsonString(jsonStr: string): string {
   // First, extract just the JSON object from the response
   const firstBrace = jsonStr.indexOf("{");
   if (firstBrace === -1) {
@@ -44,8 +44,19 @@ function cleanJsonString(jsonStr: string): string {
     const prevChar = i > 0 ? jsonStr[i - 1] : "";
     
     // Check if we're entering/exiting a string (not escaped)
-    if (char === '"' && prevChar !== "\\") {
-      inString = !inString;
+    if (char === '"') {
+      // Count consecutive backslashes immediately before the quote.
+      // If the count is odd, the quote is escaped.
+      let backslashCount = 0;
+      let j = i - 1;
+      while (j >= 0 && jsonStr[j] === "\\") {
+        backslashCount++;
+        j--;
+      }
+      const quoteIsEscaped = backslashCount % 2 === 1;
+      if (!quoteIsEscaped) {
+        inString = !inString;
+      }
       result += char;
       i++;
       continue;
