@@ -88,6 +88,9 @@ export default function AssistantPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
   
+  const contextProcessedRef = useRef(false);
+  const tempContextMessagesRef = useRef<ChatMessage[]>([]); 
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- Data Fetching ---
@@ -124,23 +127,122 @@ export default function AssistantPage() {
         }
     };
 
-    const fetchHistory = async () => {
+const fetchHistory = async () => {
         try {
             const token = await getIdToken();
             const res = await fetch(`/api/chatbot/get-history?userId=${userId}`, { 
                 headers: { Authorization: `Bearer ${token}` } 
             });
+            let initialMessages: ChatMessage[] = [];
             if (res.ok) {
                 const data = await res.json();
-                const history = (data.history || []).map((msg: any) => ({
+                initialMessages = (data.history || []).map((msg: any) => ({
                     id: msg.id,
                     role: msg.role,
                     content: msg.content,
                     attachedFileIds: msg.attachedFileIds || [],
-                    // sources will be resolved during render from libraryItems
                 }));
-                setMessages(history);
             }
+            
+            // Check for sessionStorage context
+            const storedContext = sessionStorage.getItem("assistantContext");
+            if (storedContext && !contextProcessedRef.current) {
+                try {
+                    const context = JSON.parse(storedContext);
+                    const { noteContent, resultContent, sourceTitle, actionType, sourceSnippet, sourceId, sourceType } = context;
+                    
+                    const attachedFileIds = sourceId ? [sourceId] : [];
+
+                    // 1. Prepare messages
+                    let userContent = "";
+                    if (sourceSnippet) {
+                         userContent = `I have a question about this part of my note "${sourceTitle || 'Untitled'}":\n\n> "${sourceSnippet}"\n\nPlease provide a ${actionType?.toLowerCase() || 'explanation'}.`;
+                         if (!sourceId) {
+                            userContent += `\n\n---\nFull Note Context:\n${noteContent || ''}`;
+                         }
+                    } else {
+                        userContent = `Please provide a ${actionType?.toLowerCase() || 'summary'} of the attached note "${sourceTitle || 'Untitled'}".`;
+                        if (!sourceId) {
+                            userContent = `Here is the content of my note "${sourceTitle || 'Untitled'}":\n\n${noteContent || ''}\n\nPlease provide a ${actionType?.toLowerCase() || 'summary'} of this note.`;
+                        }
+                    }
+                    
+                    const aiContent = resultContent || '';
+                    
+                    // 2. Save this interaction to history immediately
+                    // This creates a permanent record so the AI "remembers" this context for the next turn
+                    fetch("/api/chatbot/save-history", {
+                        method: "POST",
+                        headers: { 
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}` 
+                        },
+                        body: JSON.stringify({
+                            message: userContent,
+                            aiResponse: aiContent,
+                            attachedFileIds: attachedFileIds 
+                        })
+                    }).then(() => {
+                         sessionStorage.removeItem("assistantContext");
+                    }).catch(err => console.error("Failed to save background context", err));
+
+                    // 3. Create context messages locally
+                    const sources: Material[] = [];
+                     if (sourceId) {
+                        const newSource: Material = {
+                            id: sourceId,
+                            title: sourceTitle || "Attached Note",
+                            type: (sourceType as MaterialType) || "Note", 
+                            parentId: null,
+                        };
+                        sources.push(newSource);
+                        
+                        // Also select this file so future messages include it
+                        setSelectedFiles(prev => {
+                             if (prev.find(f => f.id === sourceId)) return prev;
+                             return [...prev, newSource];
+                        });
+                    }
+
+                    const contextUserMessage: ChatMessage = {
+                        role: "user",
+                        content: userContent,
+                        attachedFileIds: attachedFileIds, 
+                        sources: sources
+                    };
+                    
+                    const contextAiMessage: ChatMessage = {
+                        role: "model",
+                        content: aiContent,
+                        attachedFileIds: [],
+                    };
+                    
+                    // Store in ref to survive re-fetching/updates until backend has them
+                    tempContextMessagesRef.current = [contextUserMessage, contextAiMessage];
+                    contextProcessedRef.current = true;
+                    
+                } catch (e) {
+                    console.error("Failed to parse assistant context", e);
+                }
+            } 
+
+            // Clean up old temporary messages if backend has caught up, or append them if backend is behind
+            if (tempContextMessagesRef.current.length > 0) {
+                 const [tempUserMsg] = tempContextMessagesRef.current;
+                 // Check if the backend history contains this message
+                 const backendHasIt = initialMessages.some(m => m.content === tempUserMsg.content && m.role === 'user');
+                 
+                 if (backendHasIt) {
+                     // Backend has caught up!
+                     tempContextMessagesRef.current = [];
+                 } else {
+                     // Append our temporary context messages
+                     initialMessages.push(...tempContextMessagesRef.current);
+                 }
+            }
+            
+            setMessages(initialMessages);
+
         } catch (error) {
             console.error("Failed to fetch history:", error);
         }
@@ -148,6 +250,7 @@ export default function AssistantPage() {
 
     fetchFilesAndFolders();
     fetchHistory();
+    
   }, [userId, getIdToken]);
 
   // Auto-scroll
@@ -408,7 +511,7 @@ export default function AssistantPage() {
                     
                     <div className="flex flex-col gap-2 w-full min-w-0">
                         {/* Markdown Rendering */}
-                         <div className={cn("prose prose-sm max-w-none break-words", msg.role === 'user' ? "prose-invert" : "dark:prose-invert")}>
+                         <div className={cn("prose prose-sm max-w-none wrap-break-words", msg.role === 'user' ? "prose-invert" : "dark:prose-invert")}>
                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                 {msg.content}
                              </ReactMarkdown>
@@ -436,7 +539,7 @@ export default function AssistantPage() {
                                         }}
                                     >
                                         {getSourceIcon(source.type)}
-                                        <span className="truncate max-w-[150px]">{source.title}</span>
+                                        <span className="truncate max-w-37.5">{source.title}</span>
                                         <ExternalLink className="h-3 w-3 ml-1 opacity-50 shrink-0" />
                                     </div>
                                 ))}
@@ -600,7 +703,7 @@ export default function AssistantPage() {
       </div>
 
        {showPreview && previewMaterial && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in-0">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in-0">
           <Card className="w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 bg-card">
             <CardHeader className="flex flex-row items-center justify-between border-b px-6 py-4">
               <div className="flex items-center gap-2">

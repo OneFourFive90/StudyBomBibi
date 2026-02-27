@@ -114,15 +114,17 @@ export function Sidebar({ className, onLinkClick, isCollapsed = false, onToggleC
             </span>
           </div>
         )}
-        <div className="flex items-center gap-1">
+        <div className={cn("flex items-center gap-1", isCollapsed ? "justify-center w-full" : "")}>
           <ThemeToggle />
-          <button 
-            onClick={logout} 
-            className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          {!isCollapsed && (
+            <button 
+              onClick={logout} 
+              className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>

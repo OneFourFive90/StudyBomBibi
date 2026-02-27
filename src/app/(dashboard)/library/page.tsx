@@ -3,594 +3,176 @@
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
-import Image from "next/image";
-import { authenticatedFetch } from "@/lib/authenticatedFetch";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { StatusToast } from "@/components/ui/status-toast";
 import { RenameModal } from "@/components/ui/rename-modal";
 import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
 import { UPLOAD_FILE_ACCEPT, isAllowedUploadFileType } from "@/lib/upload/fileTypePolicy";
-import {
-  Book,
-  FileText,
-  StickyNote,
-  Upload,
-  Folder,
-  ArrowLeft,
-  X,
-  Search,
-  Sparkles,
-  Highlighter,
-  Wand2,
-  Plus,
-  Maximize2,
-  Minimize2,
-  PenLine,
-  Trash2,
-  FolderInput,
-  ExternalLink,
-  MoreVertical,
-  LayoutGrid,
-  List,
-} from "lucide-react";
+import { Upload } from "lucide-react";
 
-type MaterialType = "PDF" | "Note" | "Document" | "Folder";
-type MaterialSource = "folder" | "file" | "note";
+import { 
+  Material, 
+  FolderRecord, 
+  FileRecord, 
+  MaterialType, 
+  PendingDeleteAction,
+  PendingRenameAction,
+  PendingMoveAction,
+  DocumentPreviewKind
+} from "@/lib/library/types";
 
-interface Material {
-  id: string;
-  type: MaterialType;
-  source: MaterialSource;
-  title: string;
-  author?: string;
-  content?: string;
-  tag?: string;
-  parentId: string | null;
-  downloadURL?: string;
-  mimeType?: string;
-}
+import { 
+  toFolderMaterial, 
+  toFileMaterial, 
+  getDocumentPreviewKind,
+  getBlockedFolderIds,
+  checkDuplicateNoteName,
+  createDragGhost,
+  getFilteredMaterials
+} from "@/lib/library/utils";
 
-interface FolderRecord {
-  id: string;
-  ownerId: string;
-  name: string;
-  parentFolderId: string | null;
-  path: string[];
-}
+import { useLibraryData } from "@/lib/library/hooks";
+import { useLibraryActions } from "@/lib/library/actions";
 
-interface FileRecord {
-  id: string;
-  ownerId: string;
-  originalName: string;
-  mimeType: string;
-  folderId: string | null;
-  downloadURL: string;
-  category?: string;
-  extractedText?: string;
-}
-
-interface PendingDeleteAction {
-  id: string;
-  type: "file" | "folder";
-  label: string;
-}
-
-interface PendingRenameAction {
-  id: string;
-  type: "file" | "folder";
-  parentId: string | null;
-  currentName: string;
-  newName: string;
-}
-
-interface PendingMoveAction {
-  id: string;
-  type: "file" | "folder";
-  currentParentId: string | null;
-}
-
-type DocumentPreviewKind = "none" | "pdf" | "image" | "text" | "web";
-
-function mapFileType(mimeType: string): MaterialType {
-  if (mimeType === "application/pdf") return "PDF";
-  if (mimeType.startsWith("text/")) return "Document";
-  if (mimeType.startsWith("image/")) return "Document";
-  return "Document";
-}
-
-function toFolderMaterial(folder: FolderRecord): Material {
-  return {
-    id: folder.id,
-    source: "folder",
-    type: "Folder",
-    title: folder.name,
-    author: "Folder",
-    parentId: folder.parentFolderId,
-  };
-}
-
-function toFileMaterial(file: FileRecord): Material {
-  const isNote = file.category === "note" || file.mimeType === "text/markdown";
-
-  return {
-    id: file.id,
-    source: "file",
-    type: isNote ? "Note" : mapFileType(file.mimeType),
-    title: file.originalName,
-    author: "Uploaded file",
-    tag: file.mimeType,
-    parentId: file.folderId,
-    downloadURL: file.downloadURL,
-    mimeType: file.mimeType,
-    content: isNote ? (file.extractedText || "") : undefined,
-  };
-}
+import { LibraryHeader } from "../../../components/library/LibraryHeader";
+import { CreateFolderInline } from "../../../components/library/CreateFolderInline";
+import { ItemCard } from "../../../components/library/ItemCard";
+import { ItemListItem } from "../../../components/library/ItemListItem";
+import { SelectedItemPanel } from "../../../components/library/SelectedItemPanel";
+import { NewNoteModal } from "../../../components/library/NewNoteModal";
+import { UploadModal } from "../../../components/library/UploadModal";
+import { DeleteConfirmationModal } from "../../../components/library/DeleteConfirmationModal";
+import { AiResultModal } from "../../../components/library/AiResultModal";
 
 export default function LibraryPage() {
   const { userId, loading: authLoading } = useAuth();
-  const [allFolders, setAllFolders] = useState<FolderRecord[]>([]);
-  const [allFiles, setAllFiles] = useState<FileRecord[]>([]);
-  const [notes, setNotes] = useState<Material[]>([]);
+  
+  const { 
+      folders: allFolders, 
+      files: allFiles, 
+      isLoading: isLoadingLibrary, 
+      refresh: loadLibraryData,
+      setFiles: setAllFiles 
+  } = useLibraryData();
+
+  const {
+      createFolder,
+      createNote,
+      uploadFile,
+      renameFolder,
+      renameFile,
+      deleteFolder,
+      deleteFile,
+      moveFolder,
+      moveFile,
+      saveNote,
+      getFilePreview,
+      explainText,
+      summariseText,
+      actionLoading
+  } = useLibraryActions(loadLibraryData);
+
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Material | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isFullView, setIsFullView] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
 
-  const [selectedItem, setSelectedItem] = useState<Material | null>(null);
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [showAddMenu, setShowAddMenu] = useState(false);
-  const [isFullView, setIsFullView] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-
-  const [showMenu, setShowMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  
   const [pendingNewNoteName, setPendingNewNoteName] = useState<string | null>(null);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
   const [pendingRename, setPendingRename] = useState<PendingRenameAction | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
-  const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved" | "error">("idle");
+
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [noteSaveStatus, setNoteSaveStatus] = useState<"saved" | "unsaved" | "saving" | "error">("saved");
   const [noteBaselineContent, setNoteBaselineContent] = useState("");
-  const [docPreviewText, setDocPreviewText] = useState("");
+  // editorRef moved to SelectedItemPanel
+
+  const [docPreviewText, setDocPreviewText] = useState<string | null>(null);
   const [docPreviewStatus, setDocPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [docPreviewError, setDocPreviewError] = useState("");
-  const [selectedDocumentPreviewKind, setSelectedDocumentPreviewKind] = useState<DocumentPreviewKind>("none");
-  const activeNoteIdRef = useRef<string | null>(null);
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [docPreviewError, setDocPreviewError] = useState<string | null>(null);
+
+  const [aiActionResult, setAiActionResult] = useState<{ title: string; content: string; originalText?: string } | null>(null);
+  const [aiActionStatus, setAiActionStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  const { toast, showToast, clearToast, showLoading } = useToastMessage();
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { toast, showToast, showLoading, clearToast } = useToastMessage();
+  const currentFolder = allFolders.find((f) => f.id === currentFolderId);
 
-  const currentFolder = allFolders.find((folder) => folder.id === currentFolderId) ?? null;
-
-  const folderMaterials = allFolders.map(toFolderMaterial);
-  const fileMaterials = allFiles.map(toFileMaterial);
-  const allMaterials = [...folderMaterials, ...fileMaterials, ...notes];
-
-  const displayedMaterials = allMaterials.filter((material) => {
-    if (!searchQuery) {
-      return material.parentId === currentFolderId;
-    }
-    return material.title.toLowerCase().includes(searchQuery.toLowerCase());
-  });
-
-  async function loadLibraryData(): Promise<void> {
-    setLoading(true);
-    setError("");
-    try {
-      const [foldersResponse, filesResponse] = await Promise.all([
-        authenticatedFetch(`/api/folders?action=get-all`, {
-          method: "GET",
-        }),
-        authenticatedFetch(`/api/get-files`, {
-          method: "GET",
-        }),
-      ]);
-
-      if (!foldersResponse.ok) {
-        const data = await foldersResponse.json();
-        throw new Error(data.error || "Failed to fetch folders");
-      }
-
-      if (!filesResponse.ok) {
-        const data = await filesResponse.json();
-        throw new Error(data.error || "Failed to fetch files");
-      }
-
-      const folderData = await foldersResponse.json();
-      const fileData = await filesResponse.json();
-      setAllFolders(folderData.folders || []);
-      setAllFiles(fileData.files || []);
-    } catch (fetchError) {
-      const message = fetchError instanceof Error ? fetchError.message : "Failed to load library data";
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const displayedMaterials = getFilteredMaterials(allFolders, allFiles, currentFolderId, searchQuery);
 
   useEffect(() => {
-    // Only redirect if no user AND no test user ID
-    if (!authLoading && !userId) {
-      router.push("/login");
-    }
+    if (!authLoading && !userId) router.push("/login");
   }, [userId, authLoading, router]);
 
-  useEffect(() => {
-    if (userId) {
-      void loadLibraryData();
-    }
-  }, [userId]);
+  // Handle selected item preview and note logic
+  const lastSelectedItemIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!selectedItem || selectedItem.type !== "Note") {
-      setNoteSaveStatus("idle");
-      setNoteBaselineContent("");
-      activeNoteIdRef.current = null;
-      return;
-    }
-
-    if (activeNoteIdRef.current !== selectedItem.id) {
-      const initialContent = selectedItem.content || "";
-      setNoteBaselineContent(initialContent);
-      setNoteSaveStatus("saved");
-      activeNoteIdRef.current = selectedItem.id;
-    }
-  }, [selectedItem]);
-
-  useEffect(() => {
-    if (!selectedItem || selectedItem.type === "Note") {
-      setSelectedDocumentPreviewKind("none");
-      setDocPreviewText("");
-      setDocPreviewStatus("idle");
-      setDocPreviewError("");
-      return;
-    }
-
-    if (!selectedItem.downloadURL) {
-      setSelectedDocumentPreviewKind("none");
-      setDocPreviewText("");
-      setDocPreviewStatus("idle");
-      setDocPreviewError("");
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadTextPreview = async () => {
-      setDocPreviewStatus("idle");
-      setDocPreviewError("");
-      setDocPreviewText("");
-
-      try {
-        const params = new URLSearchParams({
-          url: selectedItem.downloadURL as string,
-          mimeType: selectedItem.mimeType || "",
-          fileName: selectedItem.title,
-        });
-
-        const response = await fetch(
-          `/api/file-preview?${params.toString()}`
-        );
-
-        const data = await response.json();
-        if (cancelled) return;
-
-        const nextKind = (data?.kind as DocumentPreviewKind) || "web";
-        setSelectedDocumentPreviewKind(nextKind);
-
-        if (nextKind !== "text") {
-          setDocPreviewText("");
-          setDocPreviewStatus("idle");
-          setDocPreviewError("");
-          return;
-        }
-
-        setDocPreviewStatus("loading");
-
-        if (!response.ok || data?.error) {
-          throw new Error(data?.error || "Unable to fetch file content");
-        }
-
-        const text = typeof data?.text === "string" ? data.text : "";
-
-        const maxPreviewLength = 120_000;
-        const previewContent = text.length > maxPreviewLength ? `${text.slice(0, maxPreviewLength)}\n\n[Preview truncated]` : text;
-
-        setDocPreviewText(previewContent);
-        setDocPreviewStatus("ready");
-      } catch {
-        if (cancelled) return;
-        setSelectedDocumentPreviewKind("text");
-        setDocPreviewStatus("error");
-        setDocPreviewText("");
-        setDocPreviewError("Preview unavailable for this file. Use Open File to view it directly.");
-      }
-    };
-
-    void loadTextPreview();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedItem]);
-
-  const saveNoteContent = async (fileId: string, content: string): Promise<boolean> => {
-    try {
-      setNoteSaveStatus("saving");
-      const response = await authenticatedFetch("/api/notes/update", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileId,
-          content,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to save note");
-      }
-
-      setAllFiles((prev) =>
-        prev.map((file) =>
-          file.id === fileId
-            ? {
-                ...file,
-                extractedText: content,
-              }
-            : file
-        )
-      );
-      setSelectedItem((prev) => {
-        if (!prev || prev.id !== fileId || prev.type !== "Note") {
-          return prev;
-        }
-        return {
-          ...prev,
-          content,
-        };
-      });
-
-      setNoteSaveStatus("saved");
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save note";
-      setNoteSaveStatus("error");
-      setError(message);
-      showToast(message, "error");
-      return false;
-    }
-  };
-
-  const handleSaveCurrentNote = async () => {
-    if (!selectedItem || selectedItem.type !== "Note") return;
-
-    const content = selectedItem.content || "";
-    if (content === noteBaselineContent) return;
-
-    if (selectedItem.source === "file") {
-      const success = await saveNoteContent(selectedItem.id, content);
-      if (!success) return;
-    }
-
-    setNoteBaselineContent(content);
-    setNoteSaveStatus("saved");
-    showToast("Note saved", "success");
-  };
-
-  const handleDiscardCurrentNote = () => {
-    if (!selectedItem || selectedItem.type !== "Note") return;
-
-    const reverted = { ...selectedItem, content: noteBaselineContent };
-    setSelectedItem(reverted);
-    setNotes((prev) => prev.map((item) => (item.id === reverted.id ? reverted : item)));
-
-    if (editorRef.current) {
-      editorRef.current.innerText = noteBaselineContent;
-    }
-
-    setNoteSaveStatus("saved");
-  };
-
-  useEffect(() => {
-    const handleSelection = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selectedItem || selectedItem.type !== "Note") {
-        setShowMenu(false);
+    // If no item selected, reset everything
+    if (!selectedItem) {
+        setDocPreviewStatus("idle");
+        setDocPreviewText(null);
+        setDocPreviewError(null);
+        setIsEditingNote(false);
+        setNoteSaveStatus("saved");
+        setNoteBaselineContent("");
+        lastSelectedItemIdRef.current = null;
         return;
-      }
-
-      if (editorRef.current && !editorRef.current.contains(selection.anchorNode)) {
-        setShowMenu(false);
-        return;
-      }
-
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-
-      setMenuPosition({
-        top: rect.top - 50,
-        left: rect.left + rect.width / 2,
-      });
-      setShowMenu(true);
-    };
-
-    if (selectedItem?.type === "Note") {
-      document.addEventListener("selectionchange", handleSelection);
     }
 
-    return () => {
-      document.removeEventListener("selectionchange", handleSelection);
-    };
-  }, [selectedItem]);
-
-  const handleAction = (action: string) => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
-
-    if (action === "highlight") {
-      try {
-        document.designMode = "on";
-        document.execCommand("hiliteColor", false, "#fef08a");
-        document.designMode = "off";
-        selection.removeAllRanges();
-        setShowMenu(false);
-      } catch (actionError) {
-        console.error("Highlighting failed", actionError);
-      }
-      return;
+    // If we switched to a DIFFERENT item
+    if (selectedItem.id !== lastSelectedItemIdRef.current) {
+        lastSelectedItemIdRef.current = selectedItem.id;
+        
+        if (selectedItem.type === "Note") {
+            setNoteBaselineContent(selectedItem.content || "");
+            setIsEditingNote(false); // Reset editing state
+            setNoteSaveStatus("saved");
+        } 
+        
+        if (selectedItem.source === "file" && selectedItem.type !== "Note" && selectedItem.downloadURL) {
+            const kind = getDocumentPreviewKind(selectedItem);
+            if (kind === "text") {
+                setDocPreviewStatus("loading");
+                getFilePreview(selectedItem.id)
+                    .then((data: any) => {
+                        if (data && data.content) {
+                          setDocPreviewText(data.content);
+                          setDocPreviewStatus("ready");
+                        } else {
+                           throw new Error("Invalid preview data");
+                        }
+                    })
+                    .catch(() => {
+                        setDocPreviewError("Failed to load file content.");
+                        setDocPreviewStatus("error");
+                    });
+            }
+        }
     }
-
-    alert(`[Demo] ${action} feature triggered! This would call the AI agent.`);
-    setShowMenu(false);
-  };
-
-  const getIcon = (type: MaterialType) => {
-    switch (type) {
-      case "Folder":
-        return <Folder className="h-5 w-5 text-blue-500 fill-blue-100" />;
-      case "PDF":
-        return <Book className="h-5 w-5 text-red-500" />;
-      case "Note":
-        return <StickyNote className="h-5 w-5 text-yellow-500" />;
-      default:
-        return <FileText className="h-5 w-5 text-green-500" />;
-    }
-  };
+  }, [selectedItem, getFilePreview]);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
 
-    setLoading(true);
-    setError("");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create-folder",
-          name: newFolderName,
-          parentFolderId: currentFolderId,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create folder");
-      }
-
+    const success = await createFolder(newFolderName.trim(), currentFolderId);
+    if (success) {
       setNewFolderName("");
       setIsCreatingFolder(false);
-      await loadLibraryData();
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to create folder");
-      setLoading(false);
-    }
-  };
-
-  const handleRenameFolder = async (folderId: string, newName: string) => {
-    const trimmedName = newName.trim();
-    if (!trimmedName) return;
-
-    setLoading(true);
-    setError("");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "rename-folder",
-          folderId,
-          name: trimmedName,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to rename folder");
-      }
-
-      await loadLibraryData();
-      showToast("Folder name updated successfully", "success");
-    } catch (renameError) {
-      const message = renameError instanceof Error ? renameError.message : "Failed to rename folder";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
-    }
-  };
-
-  const handleMoveFolder = async (folderId: string, targetFolderId: string | null) => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "move-folder",
-          folderId,
-          parentFolderId: targetFolderId,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to move folder");
-      }
-
-      await loadLibraryData();
-      showToast("Folder moved successfully", "success");
-    } catch (moveError) {
-      const message = moveError instanceof Error ? moveError.message : "Failed to move folder";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteFolder = async (folderId: string) => {
-    setLoading(true);
-    setError("");
-    showLoading("Deleting folder...");
-    try {
-      const url = new URL("/api/folders", window.location.origin);
-      url.searchParams.set("folderId", folderId);
-
-      const response = await authenticatedFetch(url.toString(), { method: "DELETE" });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to delete folder");
-      }
-
-      if (currentFolderId === folderId) {
-        setCurrentFolderId(null);
-      }
-      await loadLibraryData();
-      setSelectedItem(null);
-      showToast("Folder deleted successfully", "success");
-    } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "Failed to delete folder";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
     }
   };
 
@@ -602,98 +184,21 @@ export default function LibraryPage() {
   const handleConfirmCreateNote = async () => {
     const noteName = pendingNewNoteName?.trim();
     if (!noteName) return;
-
-    setPendingNewNoteName(null);
-    setLoading(true);
-    setError("");
-    showLoading("Creating note...");
-
-    try {
-      const response = await authenticatedFetch("/api/notes/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: noteName,
-          content: "",
-          folderId: currentFolderId,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to create note");
-      }
-
-      const payload = await response.json();
-      await loadLibraryData();
-      if (payload?.note?.id) {
-        setSelectedItem({
-          id: payload.note.id,
-          source: "file",
-          type: "Note",
-          title: payload.note.originalName,
-          author: "Uploaded file",
-          tag: "text/markdown",
-          parentId: payload.note.folderId ?? currentFolderId,
-          downloadURL: payload.note.downloadURL,
-          mimeType: "text/markdown",
-          content: "",
-        });
-      }
-      setNoteSaveStatus("idle");
-      showToast("Note created successfully", "success");
-    } catch (createNoteError) {
-      const message = createNoteError instanceof Error ? createNoteError.message : "Failed to create note";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
+    
+    const success = await createNote(noteName, currentFolderId);
+    if (success) {
+        setPendingNewNoteName(null);
     }
-  };
-
-  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Check if dragging files, not internal items
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDraggingOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDraggingOver(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      if (isAllowedUploadFileType(file.type, file.name)) {
-        setPendingUploadFile(file);
-      } else {
-        showToast("File type not supported", "error");
-      }
-    }
-    e.dataTransfer.clearData();
-  };
-
-  const handleUpload = () => {
-    fileInputRef.current?.click();
-    setShowAddMenu(false);
   };
 
   const handleSelectUploadFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    if (!isAllowedUploadFileType(file.type, file.name)) {
+        showToast("File type not supported", "error");
+        return;
+    }
 
     setPendingUploadFile(file);
     event.target.value = "";
@@ -703,394 +208,176 @@ export default function LibraryPage() {
     const file = pendingUploadFile;
     if (!file) return;
 
-    const fileName = file.name;
-    setPendingUploadFile(null);
-
-    setLoading(true);
-    setError("");
-    showLoading(`Uploading ${fileName}...`);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const uploadResponse = await authenticatedFetch("/api/upload-file", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        const data = await uploadResponse.json();
-        throw new Error(data.error || "Upload failed");
-      }
-
-      const uploadResult = await uploadResponse.json();
-      const uploadedFileId = uploadResult?.fileId as string | undefined;
-      const alreadyExists = uploadResult?.uploadResult?.alreadyExists === true;
-
-      if (currentFolderId && uploadedFileId) {
-        await authenticatedFetch("/api/folders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "move-file",
-            fileId: uploadedFileId,
-            folderId: currentFolderId,
-          }),
-        });
-      }
-
-      await loadLibraryData();
-      showToast(alreadyExists ? "File already exists in library" : "File uploaded successfully", "success");
-    } catch (uploadError) {
-      const message = uploadError instanceof Error ? uploadError.message : "Failed to upload file";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
+    const success = await uploadFile(file, currentFolderId);
+    if (success) {
+        setPendingUploadFile(null);
+        showToast("File uploaded successfully", "success");
     }
   };
 
-  const handleMoveFile = async (fileId: string, targetFolderId: string | null) => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "move-file",
-          fileId,
-          folderId: targetFolderId,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to move file");
+  const handleRenameConfirm = async () => {
+      if (!pendingRename) return;
+      const { id, type, newName, currentName } = pendingRename;
+      const trimmed = newName.trim();
+      
+      if (!trimmed || trimmed === currentName) {
+        setPendingRename(null);
+        return;
       }
 
-      await loadLibraryData();
-      setSelectedItem(null);
-      showToast("File moved successfully", "success");
-    } catch (moveError) {
-      const message = moveError instanceof Error ? moveError.message : "Failed to move file";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
-    }
-  };
+      const success = type === "folder" 
+        ? await renameFolder(id, trimmed)
+        : await renameFile(id, trimmed);
 
-  const handleRenameFile = async (fileId: string, currentName: string) => {
-    const trimmedName = currentName.trim();
-    if (!trimmedName) return;
-
-    setLoading(true);
-    setError("");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "rename-file",
-          fileId,
-          name: trimmedName,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to rename file");
-      }
-
-      await loadLibraryData();
-      setSelectedItem((prev) => {
-        if (!prev || prev.source !== "file" || prev.id !== fileId) {
-          return prev;
-        }
-        return { ...prev, title: trimmedName };
-      });
-      showToast("File renamed successfully", "success");
-    } catch (renameError) {
-      const message = renameError instanceof Error ? renameError.message : "Failed to rename file";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteFile = async (fileId: string) => {
-    setLoading(true);
-    setError("");
-    showLoading("Deleting file...");
-    try {
-      const response = await authenticatedFetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "delete-file",
-          fileId,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to delete file");
-      }
-
-      await loadLibraryData();
-      setSelectedItem(null);
-      showToast("File deleted successfully", "success");
-    } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "Failed to delete file";
-      setError(message);
-      showToast(message, "error");
-      setLoading(false);
-    }
-  };
-
-  const requestDeleteFile = (fileId: string) => {
-    const file = allFiles.find((item) => item.id === fileId);
-    setPendingDelete({
-      id: fileId,
-      type: "file",
-      label: file?.originalName || "this file",
-    });
-  };
-
-  const requestDeleteFolder = (folderId: string) => {
-    const folder = allFolders.find((item) => item.id === folderId);
-    setPendingDelete({
-      id: folderId,
-      type: "folder",
-      label: folder?.name || "this folder",
-    });
-  };
-
-  const requestRenameFolder = (folderId: string, currentName: string) => {
-    const folder = allFolders.find((item) => item.id === folderId);
-    if (!folder) return;
-
-    setPendingRename({
-      id: folderId,
-      type: "folder",
-      parentId: folder.parentFolderId,
-      currentName,
-      newName: currentName,
-    });
-  };
-
-  const requestRenameFile = (fileId: string, currentName: string) => {
-    const file = allFiles.find((item) => item.id === fileId);
-    if (!file) return;
-
-    setPendingRename({
-      id: fileId,
-      type: "file",
-      parentId: file.folderId,
-      currentName,
-      newName: currentName,
-    });
-  };
-
-  const requestMoveFile = (fileId: string) => {
-    const file = allFiles.find((item) => item.id === fileId);
-    if (!file) return;
-
-    setPendingMove({
-      id: fileId,
-      type: "file",
-      currentParentId: file.folderId,
-    });
-  };
-
-  const requestMoveFolder = (folderId: string) => {
-    const folder = allFolders.find((item) => item.id === folderId);
-    if (!folder) return;
-
-    setPendingMove({
-      id: folderId,
-      type: "folder",
-      currentParentId: folder.parentFolderId,
-    });
-  };
-
-  const getBlockedFolderIds = (): string[] => {
-    if (!pendingMove || pendingMove.type !== "folder") {
-      return [];
-    }
-
-    const blocked = new Set<string>([pendingMove.id]);
-    const queue = [pendingMove.id];
-
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (!currentId) continue;
-
-      const children = allFolders.filter((folder) => folder.parentFolderId === currentId);
-      for (const child of children) {
-        if (!blocked.has(child.id)) {
-          blocked.add(child.id);
-          queue.push(child.id);
+      if (success) {
+          setPendingRename(null);
+          if (selectedItem && selectedItem.id === id) {
+            setSelectedItem(prev => prev ? ({ ...prev, title: trimmed }) : null);
         }
       }
-    }
-
-    return Array.from(blocked);
   };
 
-  const handleConfirmMove = async (destinationFolderId: string | null) => {
-    if (!pendingMove) return;
+  const handleDeleteConfirm = async () => {
+      if (!pendingDelete) return;
+      const { id, type } = pendingDelete;
+      
+      const success = type === "folder"
+        ? await deleteFolder(id)
+        : await deleteFile(id);
 
-    const moveTarget = pendingMove;
-    setPendingMove(null);
-
-    if (moveTarget.type === "file") {
-      await handleMoveFile(moveTarget.id, destinationFolderId);
-      return;
-    }
-
-    if (destinationFolderId === moveTarget.id) {
-      return;
-    }
-
-    await handleMoveFolder(moveTarget.id, destinationFolderId);
+      if (success) {
+          setPendingDelete(null);
+          if (selectedItem && selectedItem.id === id) {
+            setSelectedItem(null);
+          }
+      }
   };
 
-  const handleConfirmRename = async () => {
-    if (!pendingRename) return;
+  const handleMoveConfirm = async (targetId: string | null) => {
+      if (!pendingMove) return;
+      const { id, type } = pendingMove;
+      // same folder check
+      if (type === "folder" && id === targetId) return;
 
-    const { id, type, currentName, newName } = pendingRename;
-    const trimmedName = newName.trim();
-    setPendingRename(null);
+      const success = type === "folder" 
+        ? await moveFolder(id, targetId)
+        : await moveFile(id, targetId);
 
-    if (!trimmedName || trimmedName === currentName) {
-      return;
-    }
-
-    if (type === "folder") {
-      await handleRenameFolder(id, trimmedName);
-      return;
-    }
-
-    await handleRenameFile(id, trimmedName);
+      if (success) {
+          setPendingMove(null);
+          if (selectedItem && selectedItem.id === id) {
+              // Usually move clears selected item if it moves out of view? 
+              // The original code set selectedItem null ONLY on Delete/MoveFile.
+              // MoveFile original: setSelectedItem(null);
+              // Let's implement that behavior.
+              if (type !== 'folder') setSelectedItem(null);
+          }
+      }
   };
-
-  const handleConfirmDelete = async () => {
-    if (!pendingDelete) return;
-
-    const target = pendingDelete;
-    setPendingDelete(null);
-
-    if (target.type === "file") {
-      await handleDeleteFile(target.id);
-      return;
-    }
-
-    await handleDeleteFolder(target.id);
-  };
-
-  const normalizedNewNoteName = (pendingNewNoteName || "").trim().toLowerCase();
-  const isNewNoteNameDuplicate = normalizedNewNoteName.length > 0 && [
-    ...allFolders
-      .filter((folder) => folder.parentFolderId === currentFolderId)
-      .map((folder) => folder.name.trim().toLowerCase()),
-    ...allFiles
-      .filter((file) => file.folderId === currentFolderId)
-      .map((file) => file.originalName.trim().toLowerCase()),
-  ].includes(
-    normalizedNewNoteName.endsWith(".md")
-      ? normalizedNewNoteName
-      : `${normalizedNewNoteName}.md`
-  );
-
+   // Drag and Drop
   const handleItemDragStart = (e: React.DragEvent, material: Material) => {
     e.dataTransfer.setData("application/json", JSON.stringify({ id: material.id, type: material.source }));
     e.dataTransfer.effectAllowed = "move";
-
-    // Set custom drag image to show the whole card visually
-    const cardElement = e.currentTarget as HTMLElement;
-    const rect = cardElement.getBoundingClientRect();
-    
-    // Create a clone to be the drag image
-    const dragImage = cardElement.cloneNode(true) as HTMLElement;
-    dragImage.style.position = "absolute";
-    dragImage.style.top = "-9999px";
-    dragImage.style.width = `${rect.width}px`;
-    dragImage.style.height = `${rect.height}px`;
-    dragImage.style.opacity = "0.8"; // Make it slightly transparent
-    dragImage.classList.add("bg-background", "shadow-xl", "border-primary"); // Add some styles
-    
-    document.body.appendChild(dragImage);
-    e.dataTransfer.setDragImage(dragImage, 10, 10);
-    
-    // Clean up the clone after a short delay (browser needs it for a moment)
-    setTimeout(() => {
-        document.body.removeChild(dragImage);
-    }, 0);
+    createDragGhost(e);
   };
 
   const handleItemDragOver = (e: React.DragEvent, material: Material) => {
     if (material.type === "Folder") {
-      e.preventDefault();
-      e.stopPropagation();
-      e.dataTransfer.dropEffect = "move";
-      
-      if (dragOverFolderId !== material.id) {
-          setDragOverFolderId(material.id);
-      }
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        if (dragOverFolderId !== material.id) setDragOverFolderId(material.id);
     } else {
-        // Reset if dragging over a file
-        if (dragOverFolderId) {
-            setDragOverFolderId(null);
-        }
+        if (dragOverFolderId) setDragOverFolderId(null);
     }
   };
-  
-  const handleItemDragLeave = (e: React.DragEvent) => {
-      // Logic to clear dragOverFolderId when leaving a folder
-      // This can be tricky with child elements, often easier to handle in DragOver or Drop
-      // But clearing it here if we leave the specific card helps
+
+  const handleItemDrop = async (e: React.DragEvent, targetFolder: Material) => {
       e.preventDefault();
       e.stopPropagation();
       setDragOverFolderId(null);
-  }
-
-  const handleItemDrop = async (e: React.DragEvent, targetFolder: Material) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverFolderId(null);
-
-    if (targetFolder.type !== "Folder") {
-        showToast("Cannot move into a file", "error");
-        return;
-    }
-
-    try {
-      const data = e.dataTransfer.getData("application/json");
-      if (!data) return;
-
-      const draggedItem = JSON.parse(data);
-      if (draggedItem.id === targetFolder.id) {
-          showToast("Cannot move a folder into itself", "error");
-          return; 
+      if (targetFolder.type !== "Folder") {
+          showToast("Cannot move into a file", "error");
+          return;
       }
-      
-      // Check if trying to move into its own child (circular dependency) - basic check 
-      // Ideally we check if targetFolder is a descendant of draggedItem
-      
-      showLoading(`Moving item to ${targetFolder.title}...`);
 
-      // Call appropriate move function
-      if (draggedItem.type === "folder") {
-        await handleMoveFolder(draggedItem.id, targetFolder.id);
-      } else {
-        await handleMoveFile(draggedItem.id, targetFolder.id);
+      try {
+        const data = e.dataTransfer.getData("application/json");
+        if (!data) return;
+        const draggedItem = JSON.parse(data);
+        if (draggedItem.id === targetFolder.id) {
+            showToast("Cannot move into itself", "error");
+            return;
+        }
+        
+        const success = draggedItem.type === "folder"
+          ? await moveFolder(draggedItem.id, targetFolder.id)
+          : await moveFile(draggedItem.id, targetFolder.id);
+          
+      } catch (err) {
+          showToast("Failed to move item", "error");
       }
-    } catch (err) {
-      console.error("Failed to parse drag data", err);
-      showToast("Failed to move item", "error");
+  };
+
+  const handleSaveCurrentNote = async () => {
+    if (!selectedItem || selectedItem.type !== "Note") return;
+    setNoteSaveStatus("saving");
+    
+    const success = await saveNote(selectedItem.id, selectedItem.content || "");
+    if (success) {
+        setNoteBaselineContent(selectedItem.content || "");
+        setNoteSaveStatus("saved");
+    } else {
+        setNoteSaveStatus("error");
     }
   };
+
+  const handleExplain = async (text: string) => {
+    if (!selectedItem || selectedItem.type !== "Note") return;
+    setAiActionStatus("loading");
+    
+    // Pass note content as context
+    const explanation = await explainText(text, selectedItem.content);
+    
+    if (explanation && typeof explanation === 'string') {
+      setAiActionResult({ title: "Explanation", content: explanation, originalText: text });
+      setAiActionStatus("success");
+    } else {
+      setAiActionStatus("error");
+    }
+  };
+
+  const handleSummarise = async (text: string) => {
+    if (!selectedItem || selectedItem.type !== "Note") return;
+    setAiActionStatus("loading");
+    
+    const summary = await summariseText(text, selectedItem.content);
+    
+    if (summary && typeof summary === 'string') {
+      setAiActionResult({ title: "Summary", content: summary, originalText: text });
+      setAiActionStatus("success");
+    } else {
+      setAiActionStatus("error");
+    }
+  };
+  
+  const handleUpdateNoteContent = (content: string) => {
+      if (!selectedItem) return;
+      const updated = { ...selectedItem, content };
+      setSelectedItem(updated);
+      setNoteSaveStatus(content === noteBaselineContent ? "saved" : "unsaved");
+      setAllFiles(prev => prev.map(f => f.id === updated.id ? { ...f, extractedText: content } : f));
+  };
+
+  const handleDiscardNote = () => {
+      if (!selectedItem) return;
+      const updated = { ...selectedItem, content: noteBaselineContent };
+      setSelectedItem(updated);
+      handleUpdateNoteContent(noteBaselineContent);
+      setNoteSaveStatus("saved");
+  };
+
+  const isNewNoteNameDuplicate = checkDuplicateNoteName(pendingNewNoteName, currentFolderId, allFolders, allFiles);
 
   return (
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
@@ -1100,42 +387,15 @@ export default function LibraryPage() {
         <div className="fixed inset-0 z-[9997] bg-black/20 backdrop-blur-[1px]" />
       )}
 
-      {pendingNewNoteName !== null && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
-          <div className="w-[min(92vw,520px)] p-4 border rounded-lg bg-popover shadow-lg flex flex-col gap-3 animate-in fade-in zoom-in-95">
-            <div className="text-sm font-medium">Name your new note</div>
-            <Input
-              autoFocus
-              value={pendingNewNoteName}
-              onChange={(event) => setPendingNewNoteName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !isNewNoteNameDuplicate && pendingNewNoteName.trim()) {
-                  void handleConfirmCreateNote();
-                }
-                if (event.key === "Escape") {
-                  setPendingNewNoteName(null);
-                }
-              }}
-              placeholder="My Notes"
-            />
-            {isNewNoteNameDuplicate && (
-              <p className="text-xs text-destructive">A file/folder with similar name already exists here.</p>
-            )}
-            <div className="flex items-center gap-2 justify-end">
-              <Button size="sm" variant="ghost" onClick={() => setPendingNewNoteName(null)} disabled={loading}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => void handleConfirmCreateNote()}
-                disabled={loading || !pendingNewNoteName.trim() || isNewNoteNameDuplicate}
-              >
-                Create Note
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewNoteModal 
+        isOpen={pendingNewNoteName !== null}
+        pendingName={pendingNewNoteName || ""}
+        onNameChange={setPendingNewNoteName}
+        onConfirm={() => void handleConfirmCreateNote()}
+        onCancel={() => setPendingNewNoteName(null)}
+        isDuplicate={isNewNoteNameDuplicate}
+        loading={loading}
+      />
 
       <RenameModal
         open={Boolean(pendingRename)}
@@ -1143,24 +403,20 @@ export default function LibraryPage() {
         originalName={pendingRename?.currentName ?? ""}
         value={pendingRename?.newName ?? ""}
         existingNames={
-          pendingRename
-            ? [
-                ...allFolders
-                  .filter((folder) => folder.parentFolderId === pendingRename.parentId && folder.id !== pendingRename.id)
-                  .map((folder) => folder.name),
-                ...allFiles
-                  .filter((file) => file.folderId === pendingRename.parentId && file.id !== pendingRename.id)
-                  .map((file) => file.originalName),
-              ]
-            : []
+            pendingRename
+              ? [
+                  ...allFolders
+                    .filter((folder) => folder.parentFolderId === pendingRename.parentId && folder.id !== pendingRename.id)
+                    .map((folder) => folder.name),
+                  ...allFiles
+                    .filter((file) => file.folderId === pendingRename.parentId && file.id !== pendingRename.id)
+                    .map((file) => file.originalName),
+                ]
+              : []
         }
         loading={loading}
-        onValueChange={(value) =>
-          setPendingRename((prev) =>
-            prev ? { ...prev, newName: value } : prev
-          )
-        }
-        onConfirm={() => void handleConfirmRename()}
+        onValueChange={(value) => setPendingRename(prev => prev ? { ...prev, newName: value } : prev)}
+        onConfirm={() => void handleRenameConfirm()}
         onCancel={() => setPendingRename(null)}
       />
 
@@ -1169,55 +425,27 @@ export default function LibraryPage() {
         open={Boolean(pendingMove)}
         targetType={pendingMove?.type ?? "file"}
         currentParentId={pendingMove?.currentParentId ?? null}
-        folders={allFolders.map((folder) => ({
-          id: folder.id,
-          name: folder.name,
-          path: folder.path,
-          parentFolderId: folder.parentFolderId,
-        }))}
-        blockedFolderIds={getBlockedFolderIds()}
+        folders={allFolders.map(f => ({ id: f.id, name: f.name, path: f.path, parentFolderId: f.parentFolderId }))}
+        blockedFolderIds={getBlockedFolderIds(pendingMove, allFolders)}
         loading={loading}
-        onConfirm={(destinationFolderId) => void handleConfirmMove(destinationFolderId)}
+        onConfirm={(targetId) => void handleMoveConfirm(targetId)}
         onCancel={() => setPendingMove(null)}
       />
 
-      {pendingUploadFile && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9998] w-[min(92vw,560px)]">
-          <div className="p-4 border rounded-lg bg-popover shadow-lg flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
-            <div className="text-sm">
-              Ready to upload <strong>{pendingUploadFile.name}</strong>
-              {currentFolder ? ` into ${currentFolder.name}` : " to Root"}.
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => void handleConfirmUpload()} disabled={loading}>
-                Confirm Upload
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setPendingUploadFile(null)} disabled={loading}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UploadModal 
+        file={pendingUploadFile}
+        currentFolderName={currentFolder?.name}
+        onConfirm={() => void handleConfirmUpload()}
+        onCancel={() => setPendingUploadFile(null)}
+        loading={loading}
+      />
 
-      {pendingDelete && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9998] w-[min(92vw,560px)]">
-          <div className="p-4 border rounded-lg bg-popover border-destructive/40 shadow-lg flex flex-col gap-3 animate-in fade-in slide-in-from-top-4">
-            <div className="text-sm">
-              Delete <strong>{pendingDelete.label}</strong>?
-              {pendingDelete.type === "folder" ? " This includes nested files and subfolders." : " This action cannot be undone."}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()} disabled={loading}>
-                Confirm Delete
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setPendingDelete(null)} disabled={loading}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmationModal
+        pendingDelete={pendingDelete}
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={() => setPendingDelete(null)}
+        loading={loading}
+      />
 
       <input
         ref={fileInputRef}
@@ -1229,9 +457,29 @@ export default function LibraryPage() {
 
       <div 
         className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4 relative"
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDragOver={(e) => {
+            e.preventDefault(); 
+            e.stopPropagation();
+            if (e.dataTransfer.types.includes("Files")) setIsDraggingOver(true);
+        }}
+        onDragLeave={(e) => {
+            e.preventDefault(); 
+            e.stopPropagation();
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDraggingOver(false);
+        }}
+        onDrop={(e) => {
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            setIsDraggingOver(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) {
+                 if (!isAllowedUploadFileType(file.type, file.name)) {
+                    showToast("File type not supported", "error");
+                } else {
+                    setPendingUploadFile(file);
+                }
+            }
+        }}
       >
         {isDraggingOver && (
           <div className="absolute inset-4 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center border-2 border-dashed border-primary rounded-lg pointer-events-none animate-in fade-in zoom-in-95 duration-200">
@@ -1239,535 +487,132 @@ export default function LibraryPage() {
             <p className="text-xl font-medium text-primary">Drop file here to upload</p>
           </div>
         )}
-        <div className="flex-none flex flex-col gap-4 md:flex-row md:items-center md:justify-between pb-4 border-b shrink-0">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              {currentFolderId && (
-                <Button variant="ghost" size="icon" onClick={() => setCurrentFolderId(null)} className="shrink-0">
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-              )}
-              <h1 className="text-3xl font-bold tracking-tight truncate">{currentFolder ? currentFolder.name : "Library"}</h1>
-            </div>
-            <p className="text-muted-foreground mt-2 truncate">
-              {currentFolderId ? "Folder contents" : "Manage your study materials and notes."}
-            </p>
-          </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64 md:flex-none">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search materials..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </div>
-
-            <div className="flex bg-muted rounded-lg p-1 shrink-0">
-               <Button
-                 variant={viewMode === "grid" ? "secondary" : "ghost"}
-                 size="sm"
-                 className="h-8 px-2"
-                 onClick={() => setViewMode("grid")}
-                 title="Grid View"
-               >
-                 <LayoutGrid className="h-4 w-4" />
-               </Button>
-               <Button
-                 variant={viewMode === "list" ? "secondary" : "ghost"}
-                 size="sm"
-                 className="h-8 px-2"
-                 onClick={() => setViewMode("list")}
-                 title="List View"
-               >
-                 <List className="h-4 w-4" />
-               </Button>
-            </div>
-
-            <div className="relative" onClick={(event) => event.stopPropagation()}>
-              <Button className="gap-2" onClick={() => setShowAddMenu((prev) => !prev)}>
-                <Plus className="h-4 w-4" /> Add New
-              </Button>
-
-              {showAddMenu && (
-                <div className="absolute right-0 top-12 w-48 bg-popover border rounded-md shadow-md z-50 animate-in fade-in zoom-in-95 duration-200">
-                  <div className="p-1">
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start gap-2 text-sm"
-                      onClick={() => {
-                        setIsCreatingFolder(true);
-                        setShowAddMenu(false);
-                      }}
-                    >
-                      <Folder className="h-4 w-4 text-blue-500" /> New Folder
-                    </Button>
-                    <Button variant="ghost" className="w-full justify-start gap-2 text-sm" onClick={() => void handleCreateNote()}>
-                      <StickyNote className="h-4 w-4 text-yellow-500" /> New Note
-                    </Button>
-                    <Button variant="ghost" className="w-full justify-start gap-2 text-sm" onClick={handleUpload}>
-                      <Upload className="h-4 w-4 text-green-500" /> Upload File
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <LibraryHeader 
+            currentFolder={currentFolder}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            showAddMenu={showAddMenu}
+            onToggleAddMenu={() => setShowAddMenu(prev => !prev)}
+            onNavigateBack={() => setCurrentFolderId(null)}
+            onCreateFolder={() => { setIsCreatingFolder(true); setShowAddMenu(false); }}
+            onCreateNote={handleCreateNote}
+            onUpload={() => { fileInputRef.current?.click(); setShowAddMenu(false); }}
+        />
 
         <div className="flex-1 overflow-y-auto pt-6">
-          {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+            {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+            
+            <CreateFolderInline 
+                isOpen={isCreatingFolder}
+                folderName={newFolderName}
+                onFolderNameChange={setNewFolderName}
+                onCreate={() => void handleCreateFolder()}
+                onCancel={() => setIsCreatingFolder(false)}
+                loading={loading}
+            />
 
-          {isCreatingFolder && (
-            <div className="mb-6 p-4 border rounded-lg bg-muted/50 flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
-              <Folder className="h-6 w-6 text-muted-foreground" />
-              <Input
-                autoFocus
-                placeholder="Folder Name"
-                value={newFolderName}
-                onChange={(event) => setNewFolderName(event.target.value)}
-                className="max-w-xs"
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleCreateFolder();
-                  if (event.key === "Escape") setIsCreatingFolder(false);
-                }}
-              />
-              <Button size="sm" onClick={() => void handleCreateFolder()} disabled={loading}>Create</Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsCreatingFolder(false)}>Cancel</Button>
-            </div>
-          )}
-
-          {viewMode === "grid" ? (
-          <div className={`grid gap-6 pb-8 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
-            {displayedMaterials.map((material) => (
-              <Card
-                key={material.id}
-                draggable
-                onDragStart={(e) => handleItemDragStart(e, material)}
-                onDragOver={(e) => {
-                    handleItemDragOver(e, material);
-                }}
-                onDragLeave={handleItemDragLeave}
-                onDrop={(e) => handleItemDrop(e, material)}
-                className={`hover:bg-muted/50 transition-colors cursor-pointer group flex flex-col min-w-0 relative ${
-                    dragOverFolderId === material.id ? "ring-2 ring-primary bg-primary/10" : ""
-                }`}
-                onClick={() => {
-                  if (material.type === "Folder") {
-                    setCurrentFolderId(material.id);
-                  } else {
-                    setSelectedItem(material);
-                  }
-                }}
-              >
-                <CardHeader className="flex flex-row items-center gap-4 pb-2 space-y-0 relative">
-                  <div className="p-2 bg-background rounded-md border shadow-sm group-hover:border-primary/50 transition-colors shrink-0">
-                    {getIcon(material.type)}
-                  </div>
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <CardTitle className="text-base font-medium leading-snug break-words line-clamp-2">{material.title}</CardTitle>
-                    <CardDescription className="text-sm mt-1 break-words">{material.author || "Unknown Author"}</CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="relative pb-8">
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground shrink-0">
-                      {material.type}
-                    </span>
-                  </div>
-                  <div className="absolute bottom-2 right-2" onClick={(event) => event.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity data-[state=open]:opacity-100">
-                          <MoreVertical className="h-4 w-4" />
-                          <span className="sr-only">Actions</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestRenameFolder(material.id, material.title)
-                              : requestRenameFile(material.id, material.title)
-                          }
-                        >
-                          <PenLine className="h-4 w-4 mr-2" /> Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestMoveFolder(material.id)
-                              : requestMoveFile(material.id)
-                          }
-                        >
-                          <FolderInput className="h-4 w-4 mr-2" /> Move to
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestDeleteFolder(material.id)
-                              : requestDeleteFile(material.id)
-                          }
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          ) : (
-            <div className="flex flex-col space-y-2 pb-8">
-              <div className="flex items-center px-4 py-2 text-sm text-muted-foreground font-medium border-b">
-                <div className="w-[40px]"></div>
-                <div className="flex-1 min-w-0">Name</div>
-                <div className="w-[120px]">Type</div>
-                <div className="w-[150px] hidden md:block">Author</div>
-                <div className="w-[40px]"></div>
-              </div>
-              {displayedMaterials.map((material) => (
-                <div
-                  key={material.id}
-                  draggable
-                  onDragStart={(e) => handleItemDragStart(e, material)}
-                  onDragOver={(e) => handleItemDragOver(e, material)}
-                  onDragLeave={handleItemDragLeave}
-                  onDrop={(e) => handleItemDrop(e, material)}
-                  className={`flex items-center px-4 py-3 border rounded-lg hover:bg-muted/50 cursor-pointer group transition-colors ${
-                      dragOverFolderId === material.id ? "ring-2 ring-primary bg-primary/10" : ""
-                  }`}
-                  onClick={() => {
-                    if (material.type === "Folder") {
-                      setCurrentFolderId(material.id);
-                    } else {
-                      setSelectedItem(material);
-                    }
-                  }}
-                >
-                  <div className="w-[40px] flex justify-center shrink-0">
-                    <div className="bg-background rounded-md border shadow-sm p-1.5 shrink-0">
-                      {getIcon(material.type)}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0 px-4">
-                    <div className="font-medium truncate">{material.title}</div>
-                  </div>
-                  <div className="w-[120px] text-sm text-muted-foreground shrink-0 flex items-center">
-                    <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground">
-                      {material.type}
-                    </span>
-                  </div>
-                  <div className="w-[150px] hidden md:block text-sm text-muted-foreground truncate shrink-0">
-                    {material.author || "Unknown"}
-                  </div>
-                  <div className="w-[40px] flex justify-end shrink-0" onClick={(event) => event.stopPropagation()}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity data-[state=open]:opacity-100">
-                          <MoreVertical className="h-4 w-4" />
-                          <span className="sr-only">Actions</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestRenameFolder(material.id, material.title)
-                              : requestRenameFile(material.id, material.title)
-                          }
-                        >
-                          <PenLine className="h-4 w-4 mr-2" /> Rename
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestMoveFolder(material.id)
-                              : requestMoveFile(material.id)
-                          }
-                        >
-                          <FolderInput className="h-4 w-4 mr-2" /> Move to
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => 
-                            material.source === "folder" 
-                              ? requestDeleteFolder(material.id)
-                              : requestDeleteFile(material.id)
-                          }
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" /> Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+            {viewMode === "grid" ? (
+                <div className={`grid gap-6 pb-8 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
+                    {displayedMaterials.map(material => (
+                        <ItemCard 
+                            key={material.id}
+                            material={material}
+                            isDragOver={dragOverFolderId === material.id}
+                            onDragStart={handleItemDragStart}
+                            onDragOver={handleItemDragOver}
+                            onDragLeave={() => setDragOverFolderId(null)}
+                            onDrop={handleItemDrop}
+                            onClick={(m) => m.type === "Folder" ? setCurrentFolderId(m.id) : setSelectedItem(m)}
+                            onRename={(m) => m.source === "folder" 
+                                ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                                : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                            onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                            onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                        />
+                    ))}
                 </div>
-              ))}
-            </div>
-          )}
+            ) : (
+                <div className="flex flex-col space-y-2 pb-8">
+                     <div className="flex items-center px-4 py-2 text-sm text-muted-foreground font-medium border-b">
+                         <div className="w-[40px]"></div>
+                         <div className="flex-1 min-w-0">Name</div>
+                         <div className="w-[120px]">Type</div>
+                         <div className="w-[150px] hidden md:block">Author</div>
+                         <div className="w-[40px]"></div>
+                     </div>
+                     {displayedMaterials.map(material => (
+                         <ItemListItem 
+                             key={material.id}
+                             material={material}
+                             isDragOver={dragOverFolderId === material.id}
+                             onDragStart={handleItemDragStart}
+                             onDragOver={handleItemDragOver}
+                             onDragLeave={() => setDragOverFolderId(null)}
+                             onDrop={handleItemDrop}
+                             onClick={(m) => m.type === "Folder" ? setCurrentFolderId(m.id) : setSelectedItem(m)}
+                             onRename={(m) => m.source === "folder" 
+                                 ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                                 : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                             onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                             onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                         />
+                     ))}
+                </div>
+            )}
         </div>
       </div>
 
       {selectedItem && (
-        <>
-          <div
-            className="md:hidden fixed inset-0 z-40 bg-background/80 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setSelectedItem(null);
-              setIsFullView(false);
-            }}
+          <SelectedItemPanel 
+              selectedItem={selectedItem}
+              onClose={() => setSelectedItem(null)}
+              isFullView={isFullView}
+              onToggleFullView={() => setIsFullView(!isFullView)}
+              isEditingNote={isEditingNote}
+              onSetIsEditing={setIsEditingNote}
+              onUpdateNoteContent={handleUpdateNoteContent}
+              noteSaveStatus={noteSaveStatus}
+              onSaveNote={() => void handleSaveCurrentNote()}
+              onDiscardNote={handleDiscardNote}
+              noteBaselineContent={noteBaselineContent}
+              onRename={(id, name) => setPendingRename({ id, type: "file", parentId: selectedItem.parentId, currentName: selectedItem.title, newName: name })}
+              onMove={(id) => setPendingMove({ id, type: "file", currentParentId: selectedItem.parentId })}
+              onDelete={(id) => setPendingDelete({ id, type: "file", label: selectedItem.title })}
+              previewKind={getDocumentPreviewKind(selectedItem)}
+              previewStatus={docPreviewStatus}
+              previewText={docPreviewText}
+              previewError={docPreviewError}
+              onAiExplain={handleExplain}
+              onAiSummarise={handleSummarise}
           />
-
-          <div
-            className={`
-              fixed inset-y-0 right-0 z-50 bg-background shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col h-full border-l
-              ${isFullView ? "w-full" : "w-full md:relative md:w-1/3 md:shrink-0 md:shadow-none"}
-            `}
-          >
-            {showMenu && selectedItem.type === "Note" && (
-              <div
-                className="fixed z-60 flex items-center gap-1 p-1 bg-popover text-popover-foreground rounded-lg shadow-xl border animate-in fade-in zoom-in-95 duration-200"
-                style={{
-                  top: `${menuPosition.top}px`,
-                  left: `${menuPosition.left}px`,
-                  transform: "translate(-50%, -10px)",
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-              >
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 hover:bg-muted text-xs font-medium" onClick={() => handleAction("explain")}>
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                  Explain
-                </Button>
-                <div className="w-px h-4 bg-border mx-1" />
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 hover:bg-muted text-xs font-medium" onClick={() => handleAction("summarize")}>
-                  <Wand2 className="w-3.5 h-3.5 text-blue-500" />
-                  Summarize
-                </Button>
-                <div className="w-px h-4 bg-border mx-1" />
-                <Button variant="ghost" size="sm" className="h-8 gap-1.5 hover:bg-muted text-xs font-medium" onClick={() => handleAction("highlight")}>
-                  <Highlighter className="w-3.5 h-3.5 text-amber-500" />
-                  Highlight
-                </Button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between p-6 border-b">
-              <div className="flex items-center gap-3 overflow-hidden">
-                {getIcon(selectedItem.type)}
-                <h2 className="text-xl font-semibold break-words">{selectedItem.title}</h2>
-              </div>
-              <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="hidden md:inline-flex"
-                  onClick={() => setIsFullView(!isFullView)}
-                  title={isFullView ? "Collapse" : "Expand"}
-                >
-                  {isFullView ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setIsFullView(false);
-                  }}
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex-1 p-6 overflow-y-auto">
-              {selectedItem.type === "Note" ? (
-                <div className="relative min-h-75">
-                  {(!selectedItem.content || selectedItem.content.trim() === "") && (
-                    <p className="absolute left-0 top-0 text-base text-muted-foreground pointer-events-none select-none">
-                      Start writing...
-                    </p>
-                  )}
-                  <div
-                    key={selectedItem.id}
-                    ref={(element) => {
-                      if (element && element.innerText !== (selectedItem.content || "")) {
-                        element.innerText = selectedItem.content || "";
-                      }
-                      editorRef.current = element;
-                    }}
-                    contentEditable
-                    className="prose dark:prose-invert max-w-none text-base leading-relaxed focus:outline-none min-h-75"
-                    suppressContentEditableWarning
-                    onInput={(event) => {
-                      const newContent = event.currentTarget.innerText;
-                      const updated = { ...selectedItem, content: newContent };
-                      setSelectedItem(updated);
-                      setNotes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-
-                      setNoteSaveStatus(newContent === noteBaselineContent ? "saved" : "unsaved");
-                    }}
-                    onBlur={(event) => {
-                      const newContent = event.currentTarget.innerText;
-                      if (newContent !== selectedItem.content) {
-                        const updated = { ...selectedItem, content: newContent };
-                        setSelectedItem(updated);
-                        setNotes((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-                        setNoteSaveStatus(newContent === noteBaselineContent ? "saved" : "unsaved");
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="h-full min-h-[380px] border rounded-lg overflow-hidden bg-muted/10">
-                  {!selectedItem.downloadURL && (
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-4 text-muted-foreground p-8 border-2 border-dashed rounded-lg">
-                      <FileText className="h-16 w-16 opacity-20" />
-                      <div>
-                        <h3 className="text-lg font-medium text-foreground">Document Preview</h3>
-                        <p className="text-sm mt-1">No preview URL available for this file.</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "image" && (
-                    <div className="relative w-full h-full min-h-[380px] bg-background">
-                      <Image
-                        src={selectedItem.downloadURL}
-                        alt={selectedItem.title}
-                        fill
-                        unoptimized
-                        className="object-contain"
-                      />
-                    </div>
-                  )}
-
-                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "pdf" && (
-                    <iframe
-                      title={`Preview ${selectedItem.title}`}
-                      src={selectedItem.downloadURL}
-                      className="w-full h-full min-h-[380px]"
-                    />
-                  )}
-
-                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "text" && (
-                    <div className="h-full overflow-auto p-4">
-                      {docPreviewStatus === "loading" && (
-                        <p className="text-sm text-muted-foreground">Loading preview...</p>
-                      )}
-                      {docPreviewStatus === "error" && (
-                        <p className="text-sm text-destructive">{docPreviewError}</p>
-                      )}
-                      {docPreviewStatus === "ready" && (
-                        <pre className="text-sm leading-relaxed whitespace-pre-wrap break-words font-mono">
-                          {docPreviewText}
-                        </pre>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedItem.downloadURL && selectedDocumentPreviewKind === "web" && (
-                    <iframe
-                      title={`Preview ${selectedItem.title}`}
-                      src={selectedItem.downloadURL}
-                      className="w-full h-full min-h-[380px]"
-                    />
-                  )}
-
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t bg-muted/10 flex justify-between items-center text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                {selectedItem.type === "Note" ? (
-                  <span className="flex items-center gap-1 text-xs">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        noteSaveStatus === "unsaved"
-                          ? "bg-orange-500"
-                          : noteSaveStatus === "saving"
-                          ? "bg-yellow-500"
-                          : noteSaveStatus === "error"
-                            ? "bg-red-500"
-                            : "bg-green-500"
-                      }`}
-                    />
-                    {noteSaveStatus === "unsaved"
-                      ? "Unsaved"
-                      : noteSaveStatus === "saving"
-                        ? "Saving..."
-                      : noteSaveStatus === "error"
-                        ? "Save failed"
-                        : "Saved"}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs">Read-only</span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 justify-end">
-                {selectedItem.type === "Note" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleSaveCurrentNote()}
-                    disabled={loading || (selectedItem.content || "") === noteBaselineContent}
-                  >
-                    Save
-                  </Button>
-                )}
-                {selectedItem.type === "Note" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDiscardCurrentNote}
-                    disabled={loading || (selectedItem.content || "") === noteBaselineContent}
-                  >
-                    Discard
-                  </Button>
-                )}
-                {selectedItem.source === "file" && (
-                  <Button variant="outline" size="sm" onClick={() => requestRenameFile(selectedItem.id, selectedItem.title)}>
-                    Rename
-                  </Button>
-                )}
-                {selectedItem.source === "file" && (
-                  <Button variant="outline" size="sm" onClick={() => requestMoveFile(selectedItem.id)}>
-                    Move
-                  </Button>
-                )}
-                {selectedItem.source === "file" && (
-                  <Button variant="outline" size="sm" onClick={() => requestDeleteFile(selectedItem.id)}>
-                    Delete
-                  </Button>
-                )}
-                {selectedItem.source === "file" && selectedItem.downloadURL && (
-                  <a href={selectedItem.downloadURL} target="_blank" rel="noreferrer" className="inline-flex">
-                    <Button variant="outline" size="sm" className="gap-2">
-                      <ExternalLink className="h-4 w-4" /> Open File
-                    </Button>
-                  </a>
-                )}
-                {selectedItem.source === "file" && !selectedItem.downloadURL && (
-                  <Button variant="outline" size="sm" className="gap-2" disabled>
-                    <ExternalLink className="h-4 w-4" /> Open File
-                  </Button>
-                )}
-                <Button size="sm" onClick={() => setSelectedItem(null)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        </>
       )}
+
+      <AiResultModal 
+        result={aiActionResult} 
+        isLoading={aiActionStatus === "loading"}
+        onClose={() => {
+            setAiActionResult(null);
+            setAiActionStatus("idle");
+        }}
+        onAskAi={() => {
+            if (!aiActionResult) return;
+            const context = {
+                noteContent: selectedItem?.content || "",
+                resultContent: aiActionResult.content,
+                sourceTitle: selectedItem?.title || "Unknown Source",
+                sourceId: selectedItem?.id,
+                sourceType: selectedItem?.type || "Note", // Added sourceType
+                actionType: aiActionResult.title, // "Summary" or "Explanation"
+                sourceSnippet: aiActionResult.originalText
+            };
+            sessionStorage.setItem("assistantContext", JSON.stringify(context));
+            router.push("/assistant");
+        }}
+      />
+
     </div>
   );
 }
