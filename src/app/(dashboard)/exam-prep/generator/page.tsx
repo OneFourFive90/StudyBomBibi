@@ -431,7 +431,7 @@ export default function GeneratorPage() {
     const hasAnyInput = sourceFileIds.length > 0 || referenceFileIds.length > 0 || hasPrompt;
 
     if (!hasAnyInput) {
-      setErrorMessage("Provide at least one input: material file, past year file, or prompt.");
+      setErrorMessage("Provide at least one input: material file, mock exam file, or prompt.");
       return;
     }
 
@@ -671,7 +671,7 @@ export default function GeneratorPage() {
                 className="w-full"
             >
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="paper">Past Year Paper</TabsTrigger>
+                <TabsTrigger value="paper">Mock Exam</TabsTrigger>
                 <TabsTrigger value="quiz">Quiz (MCQ)</TabsTrigger>
               </TabsList>
             </Tabs>
@@ -686,8 +686,8 @@ export default function GeneratorPage() {
               {mode === "paper" &&
               renderFileSection(
                 "reference",
-                "Past Year Paper (Reference Format)",
-                "Upload or pick past year paper files to guide question format/style."
+                "Mock Exam (Reference Format)",
+                "Upload or pick mock exam files to guide question format/style."
               )}
             </div>
 
@@ -941,7 +941,7 @@ export default function GeneratorPage() {
           <Card className="w-full max-w-lg shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle>
-                Select from Library ({libraryTarget === "syllabus" ? "Syllabus / Materials" : "Past Year Reference"})
+                Select from Library ({libraryTarget === "syllabus" ? "Syllabus / Materials" : "Mock Exam Reference"})
               </CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setIsLibraryOpen(false)}>
                 <X className="h-4 w-4" />
