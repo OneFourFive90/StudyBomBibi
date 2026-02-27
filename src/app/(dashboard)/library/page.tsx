@@ -122,15 +122,6 @@ export default function LibraryPage() {
         label: "Type",
         compare: (a: Material, b: Material) => a.type.localeCompare(b.type),
       },
-      {
-        key: "time" as LibrarySortKey,
-        label: "Time",
-        compare: (a: Material, b: Material) => {
-          const aTime = a.updatedAtMs || a.createdAtMs || 0;
-          const bTime = b.updatedAtMs || b.createdAtMs || 0;
-          return aTime - bTime;
-        },
-      },
     ],
     []
   );
@@ -147,8 +138,8 @@ export default function LibraryPage() {
   } = useSort({
     items: displayedMaterials,
     options: librarySortOptions,
-    initialSortBy: "time",
-    initialSortOrder: "desc",
+    initialSortBy: "name",
+    initialSortOrder: "asc",
   });
 
   const displayedFolders = sortedDisplayedMaterials.filter((material) => material.type === "Folder");
@@ -707,12 +698,33 @@ export default function LibraryPage() {
               onRename={(id, name) => setPendingRename({ id, type: "file", parentId: selectedItem.parentId, currentName: selectedItem.title, newName: name })}
               onMove={(id) => setPendingMove({ id, type: "file", currentParentId: selectedItem.parentId })}
               onDelete={(id) => setPendingDelete({ id, type: "file", label: selectedItem.title })}
+              onNavigateToFile={(fileId) => {
+                  const target = allFiles.find(f => f.id === fileId); // Check files
+                  if (target) {
+                      setSelectedItem({
+                        id: target.id,
+                        source: "file",
+                        type: target.category === "note" || target.mimeType === "text/markdown" ? "Note" : "Document",
+                        title: target.originalName,
+                        author: "Uploaded file",
+                        parentId: target.folderId,
+                        downloadURL: target.downloadURL,
+                        mimeType: target.mimeType,
+                        content: target.extractedText,
+                      });
+                  } else {
+                      // Check folders if needed, but usually files are previewed
+                      // Also might need to fetch if not in current list?
+                      // Assuming all files are loaded in `allFiles`
+                  }
+              }}
               previewKind={getDocumentPreviewKind(selectedItem)}
               previewStatus={docPreviewStatus}
               previewText={docPreviewText}
               previewError={docPreviewError}
               onAiExplain={handleExplain}
               onAiSummarise={handleSummarise}
+                attachedFiles={[]}
           />
       )}
 

@@ -1,23 +1,5 @@
 import { Material, FolderRecord, FileRecord, MaterialType, DocumentPreviewKind, PendingMoveAction } from "./types";
 
-function toMillis(value: unknown): number {
-  if (!value || typeof value !== "object") return 0;
-
-  if ("toMillis" in value && typeof (value as { toMillis?: unknown }).toMillis === "function") {
-    return ((value as { toMillis: () => number }).toMillis() || 0);
-  }
-
-  if (
-    "seconds" in value &&
-    typeof (value as { seconds?: unknown }).seconds === "number"
-  ) {
-    const seconds = (value as { seconds: number }).seconds;
-    return seconds * 1000;
-  }
-
-  return 0;
-}
-
 export function mapFileType(mimeType: string): MaterialType {
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType.startsWith("text/")) return "Document";
@@ -33,8 +15,6 @@ export function toFolderMaterial(folder: FolderRecord): Material {
     title: folder.name,
     author: "Folder",
     parentId: folder.parentFolderId,
-    createdAtMs: toMillis(folder.createdAt),
-    updatedAtMs: toMillis(folder.updatedAt),
   };
 }
 
@@ -54,8 +34,7 @@ export function toFileMaterial(file: FileRecord): Material {
     downloadURL: file.downloadURL,
     mimeType: file.mimeType,
     content: isNote ? (file.extractedText || "") : undefined,
-    createdAtMs: toMillis(file.uploadedAt),
-    updatedAtMs: toMillis(file.updatedAt) || toMillis(file.uploadedAt),
+    attachedFileIds: file.attachedFileIds || [],
   };
 }
 

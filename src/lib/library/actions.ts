@@ -55,8 +55,8 @@ export function useLibraryActions(refresh: () => Promise<void>) {
   const createFolder = (name: string, parentId: string | null) => 
     executeAction("Creating folder...", () => createFolderApi(name, parentId), "Folder created successfully");
 
-  const createNote = (name: string, parentId: string | null) =>
-    executeAction("Creating note...", () => createNoteApi(name, parentId, ""), "Note created successfully");
+  const createNote = (name: string, parentId: string | null, content: string = "", attachedFileIds: string[] = []) =>
+    executeAction("Creating note...", () => createNoteApi(name, parentId, content, attachedFileIds), "Note created successfully");
 
   const uploadFile = (file: File, parentId: string | null) =>
     executeAction(`Uploading ${file.name}...`, () => uploadFileApi(file, parentId), "File uploaded successfully");

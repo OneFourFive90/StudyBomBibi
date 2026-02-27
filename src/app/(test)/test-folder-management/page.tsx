@@ -4,6 +4,7 @@ import { Timestamp } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { authenticatedFetch } from '@/lib/authenticatedFetch';
+import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 
 interface Folder {
   id: string;
@@ -39,6 +40,7 @@ export default function FolderManagementPage() {
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
 
   // Fetch current folder contents
   const loadFolderContents = async (folderId: string | null) => {
@@ -128,14 +130,18 @@ export default function FolderManagementPage() {
   };
 
   // Delete folder
-  const handleDeleteFolder = async (folderId: string) => {
-    if (!confirm('Are you sure you want to delete this folder?')) return;
+  const handleDeleteFolder = (folderId: string) => {
+    setFolderToDelete(folderId);
+  };
+
+  const processDeleteFolder = async () => {
+    if (!folderToDelete) return;
 
     setLoading(true);
     setError('');
     try {
       const url = new URL('/api/folders', window.location.origin);
-      url.searchParams.set('folderId', folderId);
+      url.searchParams.set('folderId', folderToDelete);
 
       const response = await authenticatedFetch(url.toString(), { method: 'DELETE' });
 
@@ -145,7 +151,7 @@ export default function FolderManagementPage() {
       }
 
       await loadFolders();
-      if (currentFolderId === folderId) {
+      if (currentFolderId === folderToDelete) {
         setCurrentFolderId(null);
         await loadFolderContents(null);
       }
@@ -153,6 +159,7 @@ export default function FolderManagementPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete folder');
     } finally {
       setLoading(false);
+      setFolderToDelete(null);
     }
   };
 
@@ -525,6 +532,17 @@ export default function FolderManagementPage() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={!!folderToDelete}
+        onOpenChange={(open) => !open && setFolderToDelete(null)}
+        title="Delete Folder"
+        message="Are you sure you want to delete this folder?"
+        confirmText="Delete"
+        variant="destructive"
+        onConfirm={processDeleteFolder}
+        onCancel={() => setFolderToDelete(null)}
+      />
     </div>
   );
 }

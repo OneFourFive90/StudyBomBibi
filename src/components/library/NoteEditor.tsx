@@ -11,6 +11,7 @@ interface NoteEditorProps {
     onBlur: (content: string) => void;
     editorRef: React.RefObject<HTMLDivElement | null>;
     noteBaselineContent: string;
+    onLinkClick?: (href: string) => void;
 }
 
 export function NoteEditor({
@@ -19,7 +20,8 @@ export function NoteEditor({
     onContentChange,
     onBlur,
     editorRef,
-    noteBaselineContent
+    noteBaselineContent,
+    onLinkClick
 }: NoteEditorProps) {
     // We need to keep the innerText in sync when not editing or when item changes
     // The original code did this with a callback ref.
@@ -95,6 +97,27 @@ export function NoteEditor({
                             pre: ({node, ...props}) => (
                                 <pre className="bg-muted p-4 rounded-lg overflow-x-auto my-4 text-muted-foreground dark:bg-muted" {...props} />
                             ),
+                            a: ({node, href, children, ...props}) => {
+                                if (href?.startsWith("study://file/")) {
+                                    return (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                onLinkClick?.(href);
+                                            }}
+                                            className="text-primary hover:underline font-medium inline-flex items-center gap-1 cursor-pointer"
+                                            title="Open file preview"
+                                        >
+                                            {children}
+                                        </button>
+                                    );
+                                }
+                                return (
+                                    <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props}>
+                                        {children}
+                                    </a>
+                                );
+                            },
                             code: ({node, className, ...props}: any) => {
                                 const isInline = props.inline || !props.children?.toString().includes('\n');
                                 return isInline ? (
