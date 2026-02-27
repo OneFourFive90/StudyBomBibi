@@ -265,13 +265,14 @@ export default function DashboardPage() {
                   </Button>
                 </Link>
               </div>
-            ) : (
-              <div className="text-center py-6 flex flex-col items-center text-muted-foreground">
-                <BookOpen className="h-10 w-10 mb-3 opacity-20" />
-                <p className="text-sm">No active study plans right now.</p>
-                <Link href="/study-planner" className="mt-4">
-                  <Button variant="outline" size="sm">Create a Plan</Button>
-                </Link>
+              <div className="flex items-center">
+                <div className="ml-4 space-y-1">
+                  <p className="text-sm font-medium leading-none">Started &quot;Advanced Calculus&quot; Plan</p>
+                  <p className="text-sm text-muted-foreground">AI Courses</p>
+                </div>
+                 <div className="ml-auto font-medium text-xs text-muted-foreground flex items-center gap-1">
+                   <Clock className="w-3 h-3" /> 1d ago
+                </div>
               </div>
             )}
           </CardContent>
