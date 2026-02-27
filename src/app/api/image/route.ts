@@ -14,9 +14,22 @@ export async function POST(req: Request) {
     // Determine if this is for storage or immediate use
     const isForStorage = storagePath && userId;
 
-    // 2. Optimize the prompt
-    const optimizedPrompt = `${imagePrompt}, highly detailed educational presentation slide, 16:9 aspect ratio, clear and legible typography, professional layout.`;
 
+// 2. DETECT PROMPT TYPE & OPTIMIZE
+let finalPrompt = sanitizedPrompt;
+
+// Check if the prompt is the "JSON-style" slide prompt
+if (sanitizedPrompt.includes("slide_title") || sanitizedPrompt.includes("bullets")) {
+  // It's a Slide! Ask for a clean background ONLY.
+  finalPrompt = `A professional, minimal, high-quality presentation background for a slide. 
+  Modern educational aesthetic, 16:9 aspect ratio, dark or blurred focus, 
+  ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, empty space for overlays.`;
+} else {
+  // It's a Diagram! Use the original description.
+  finalPrompt = `${sanitizedPrompt}, highly detailed educational diagram, 16:9 aspect ratio, professional layout.`;
+}
+
+// 3. The HuggingFace Endpoint... (Use finalPrompt in the body)
     // 3. The HuggingFace Endpoint
 
     const url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
@@ -30,7 +43,7 @@ export async function POST(req: Request) {
       },
       // IMPORTANT: We now pass exact 16:9 pixel dimensions in the "parameters" object!
       body: JSON.stringify({ 
-        inputs: optimizedPrompt,
+        inputs: finalPrompt,
         parameters: {
           width: 1024, // 16
           height: 576  // 9
