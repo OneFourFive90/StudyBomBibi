@@ -303,8 +303,8 @@ export function GenerateCourseModal({
                     }}
                     className={`p-3 rounded-lg border-2 transition-all font-medium text-sm ${
                       newCourse.formats.includes(format as 'Text' | 'Image' | 'Video')
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border bg-background hover:border-primary/50'
+                        ? 'border-primary bg-secondary-foreground text-secondary hover:bg-primary/10'
+                        : 'border-border bg-primary-foreground text-primary hover:bg-primary/10'
                     }`}
                   >
                     {format}
