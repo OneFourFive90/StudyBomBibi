@@ -475,7 +475,7 @@ const fetchHistory = async () => {
                 </Button>
                 */}
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">AI Study Companion</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">StudyBomBibi Assistant</h1>
                     <p className="text-muted-foreground mt-2">Ask questions, get explanations, and study smarter.</p>
                 </div>
              </div>

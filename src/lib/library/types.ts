@@ -12,6 +12,14 @@ export interface Material {
   parentId: string | null;
   downloadURL?: string;
   mimeType?: string;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+}
+
+export interface FirestoreTimestampLike {
+  toMillis?: () => number;
+  seconds?: number;
+  nanoseconds?: number;
 }
 
 export interface FolderRecord {
@@ -20,6 +28,8 @@ export interface FolderRecord {
   name: string;
   parentFolderId: string | null;
   path: string[];
+  createdAt?: FirestoreTimestampLike;
+  updatedAt?: FirestoreTimestampLike;
 }
 
 export interface FileRecord {
@@ -31,6 +41,8 @@ export interface FileRecord {
   downloadURL: string;
   category?: string;
   extractedText?: string;
+  uploadedAt?: FirestoreTimestampLike;
+  updatedAt?: FirestoreTimestampLike;
 }
 
 export interface PendingDeleteAction {

@@ -2,11 +2,12 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { StatusToast } from "@/components/ui/status-toast";
 import { RenameModal } from "@/components/ui/rename-modal";
 import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
+import { useSort } from "@/hooks/use-sort";
 import { UPLOAD_FILE_ACCEPT, isAllowedUploadFileType } from "@/lib/upload/fileTypePolicy";
 import { Upload } from "lucide-react";
 
@@ -28,7 +29,7 @@ import {
 import { useLibraryData } from "@/lib/library/hooks";
 import { useLibraryActions } from "@/lib/library/actions";
 
-import { LibraryHeader } from "../../../components/library/LibraryHeader";
+import { LibraryHeader, type LibrarySortKey } from "../../../components/library/LibraryHeader";
 import { CreateFolderInline } from "../../../components/library/CreateFolderInline";
 import { ItemCard } from "../../../components/library/ItemCard";
 import { ItemListItem } from "../../../components/library/ItemListItem";
@@ -109,8 +110,49 @@ export default function LibraryPage() {
   const currentFolder = allFolders.find((f) => f.id === currentFolderId);
 
   const displayedMaterials = getFilteredMaterials(allFolders, allFiles, currentFolderId, searchQuery);
-  const displayedFolders = displayedMaterials.filter((material) => material.type === "Folder");
-  const displayedFiles = displayedMaterials.filter((material) => material.type !== "Folder");
+  const librarySortOptions = useMemo(
+    () => [
+      {
+        key: "name" as LibrarySortKey,
+        label: "Name",
+        compare: (a: Material, b: Material) => a.title.localeCompare(b.title),
+      },
+      {
+        key: "type" as LibrarySortKey,
+        label: "Type",
+        compare: (a: Material, b: Material) => a.type.localeCompare(b.type),
+      },
+      {
+        key: "time" as LibrarySortKey,
+        label: "Time",
+        compare: (a: Material, b: Material) => {
+          const aTime = a.updatedAtMs || a.createdAtMs || 0;
+          const bTime = b.updatedAtMs || b.createdAtMs || 0;
+          return aTime - bTime;
+        },
+      },
+    ],
+    []
+  );
+
+  const {
+    sortBy,
+    setSortBy,
+    sortOrder,
+    showSortDropdown,
+    setShowSortDropdown,
+    sortedItems: sortedDisplayedMaterials,
+    sortLabel,
+    toggleSortOrder,
+  } = useSort({
+    items: displayedMaterials,
+    options: librarySortOptions,
+    initialSortBy: "time",
+    initialSortOrder: "desc",
+  });
+
+  const displayedFolders = sortedDisplayedMaterials.filter((material) => material.type === "Folder");
+  const displayedFiles = sortedDisplayedMaterials.filter((material) => material.type !== "Folder");
 
   useEffect(() => {
     if (!authLoading && !userId) router.push("/login");
@@ -506,6 +548,18 @@ export default function LibraryPage() {
             onCreateFolder={() => { setIsCreatingFolder(true); setShowAddMenu(false); }}
             onCreateNote={handleCreateNote}
             onUpload={() => { fileInputRef.current?.click(); setShowAddMenu(false); }}
+            showSortControls={sortedDisplayedMaterials.length > 0}
+            sortLabel={sortLabel}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            showSortDropdown={showSortDropdown}
+            sortOptions={librarySortOptions}
+            onToggleSortDropdown={() => setShowSortDropdown(prev => !prev)}
+            onSortChange={(key) => {
+              setSortBy(key);
+              setShowSortDropdown(false);
+            }}
+            onToggleSortOrder={toggleSortOrder}
         />
 
         <div className="flex-1 overflow-y-auto pt-6">
