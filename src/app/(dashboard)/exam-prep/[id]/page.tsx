@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { markdownComponents } from "@/components/markdown-renderers";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { getQuizById } from "@/lib/firebase/firestore/readQuizzesFromFirestore";
@@ -71,6 +72,7 @@ function MarkdownBlock({
           td: ({ children }) => (
             <td className="border px-2 py-1 align-top whitespace-normal break-words">{children}</td>
           ),
+          code: markdownComponents.code,
         }}
       >
         {normalizeGeneratedText(content)}

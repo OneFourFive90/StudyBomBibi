@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { markdownComponents } from "@/components/markdown-renderers";
 import { useAuth } from "@/context/AuthContext";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 import { SaveToNoteModal } from "@/components/library/SaveToNoteModal";
@@ -42,6 +43,10 @@ interface ApiFileItem {
     content?: string;
     type?: string;
     attachedFileIds?: string[];
+    // Additional fields from FirestoreFile
+    extractedText?: string;
+    downloadURL?: string;
+    mimeType?: string;
 }
 
 interface ApiFolderItem {
@@ -70,13 +75,34 @@ const mapFileToMaterial = (file: ApiFileItem): Material => {
     else if (["jpg", "jpeg", "png", "gif"].includes(ext || "")) type = "IMG";
     else if (file.type === "note") type = "Note"; // if api returns type
 
+    // Generate preview content
+    let content = file.content;
+    if (!content) {
+        if (file.mimeType?.startsWith("image/") && file.downloadURL) {
+            content = `<img src="${file.downloadURL}" alt="${name}" class="max-w-full h-auto rounded-lg shadow-md" />`;
+        } else if (file.mimeType === "application/pdf" && file.downloadURL) {
+             content = `<iframe src="${file.downloadURL}" class="w-full h-150 border-none rounded-lg shadow-sm"></iframe>`;
+        } else if (file.extractedText) {
+             // For notes/text files that will be rendered with ReactMarkdown, keep it raw.
+             // For others, wrap it?
+             // Actually, if we use the type "Note" or "TXT", the UI uses ReactMarkdown.
+             // So we should NOT wrap it in HTML tags here if it's going to be processed as Markdown.
+             content = file.extractedText;
+        } else if (file.downloadURL) {
+             content = `<div class="flex flex-col items-center justify-center p-8 text-center">
+                <p class="mb-4">Here is a link to the file:</p>
+                <a href="${file.downloadURL}" target="_blank" rel="noopener noreferrer" class="text-primary underline font-medium">Download / View ${name}</a>
+             </div>`;
+        }
+    }
+
     return {
         id: file.id,
         type,
         title: name,
         parentId: file.folderId || null,
         author: "Unknown", // API doesn't seem to return author yet
-        content: file.content,
+        content: content,
         attachedFileIds: file.attachedFileIds || []
     };
 };
@@ -590,8 +616,8 @@ const fetchHistory = async () => {
                     
                     <div className="flex flex-col gap-2 w-full min-w-0">
                         {/* Markdown Rendering */}
-                         <div className={cn("prose prose-sm max-w-none wrap-break-words", msg.role === 'user' ? "prose-invert" : "dark:prose-invert")}>
-                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                         <div className={cn("prose prose-sm max-w-none wrap-break-words", msg.role === 'user' ? "prose-invert text-primary-foreground prose-p:text-primary-foreground prose-headings:text-primary-foreground prose-strong:text-primary-foreground prose-li:text-primary-foreground" : "dark:prose-invert")}>
+                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                                 {msg.content}
                              </ReactMarkdown>
                          </div>
@@ -660,15 +686,27 @@ const fetchHistory = async () => {
             {selectedFilesCount > 0 && (
             <div className="flex gap-2 mb-2 overflow-x-auto py-2 px-1 border-t border-dashed">
                 {selectedFiles.map(file => (
-                <div key={file.id} className="flex items-center gap-1 bg-muted text-xs px-2 py-1 rounded-full whitespace-nowrap border animate-in fade-in zoom-in-95 duration-200">
+                <div 
+                    key={file.id} 
+                    className="flex items-center gap-1 bg-muted text-xs px-2 py-1 rounded-full whitespace-nowrap border animate-in fade-in zoom-in-95 duration-200 cursor-pointer hover:bg-muted/80 transition-colors group"
+                    onClick={() => {
+                        setPreviewMaterial(file);
+                        setShowPreview(true);
+                    }}
+                >
                     {getSourceIcon(file.type)}
                     <span className="max-w-37.5 truncate">{file.title}</span>
                     <button 
-                    onClick={() => toggleLibraryFile(file)}
-                    className="ml-1 hover:text-destructive"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            toggleLibraryFile(file);
+                        }}
+                        className="ml-1 hover:text-destructive opacity-70 group-hover:opacity-100 transition-opacity"
+                        title="Remove file"
                     >
-                    <X className="h-3 w-3" />
+                        <X className="h-3 w-3" />
                     </button>
+                    <ExternalLink className="h-3 w-3 ml-0.5 opacity-50" />
                 </div>
                 ))}
             </div>
@@ -809,10 +847,18 @@ const fetchHistory = async () => {
               </Button>
             </CardHeader>
             <CardContent className="overflow-y-auto p-6 flex-1">
-              <div 
-                className="prose dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: previewMaterial.content || "<p>No preview available for this file type.</p>" }}
-              />
+              {(previewMaterial.type === "Note" || previewMaterial.type === "TXT" || previewMaterial.title.toLowerCase().endsWith('.md')) ? (
+                <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {previewMaterial.content || ""}
+                    </ReactMarkdown>
+                </div>
+              ) : (
+                <div 
+                    className="prose dark:prose-invert max-w-none"
+                    dangerouslySetInnerHTML={{ __html: previewMaterial.content || "<p>No preview available for this file type.</p>" }}
+                />
+              )}
             </CardContent>
           </Card>
         </div>

@@ -39,6 +39,7 @@ export async function generateQuizWithAI(
       Treat the provided source material as a syllabus. 
       First, analyze the material to identify the core topics, concepts, and required knowledge. 
       Then, generate questions that test a deep understanding of these specific topics.
+      You can use Mermaid diagrams in the explanation to illustrate the concept. Wrap Mermaid code in a code block with language 'mermaid'.
 
       **Constraints:**
       - Number of Questions: ${numQuestions}
@@ -98,6 +99,7 @@ export async function generateQuizWithAI(
       8. Numbering rules are strict:
         - Set "id" as sequential integers starting from 1 with no gaps, duplicates, or reordering.
         - Do NOT include numbering prefixes in "question" text (e.g., avoid "Q1.", "1)", "Question 1").
+      9. You can use Mermaid diagrams in questions or explanations to illustrate concepts. Wrap Mermaid code in a code block with language 'mermaid'.
       9. For structured questions that have multiple parts (e.g., a), b), c)), use the "sub_questions" array.
          - Breakdown the total marks for the question into the sub-questions.
          - If a question has sub-questions, each sub-question must have its own "answer_key".

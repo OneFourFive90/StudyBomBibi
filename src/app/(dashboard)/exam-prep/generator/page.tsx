@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/context/AuthContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { markdownComponents } from "@/components/markdown-renderers";
 import { getExtractedTextsFromFiles } from "@/lib/firebase/firestore/getExtractedTextFromFile";
 import type { QuizQuestion, QuizScore } from "@/lib/firebase/firestore/saveQuizToFirestore";
 import { StatusToast } from "@/components/ui/status-toast";
@@ -146,6 +147,7 @@ function MarkdownBlock({
           td: ({ children }) => (
             <td className="border px-2 py-1 align-top whitespace-normal break-words">{children}</td>
           ),
+          code: markdownComponents.code,
         }}
       >
         {normalizeGeneratedText(content)}

@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { updateActivityCompletionStatus } from "@/lib/firebase/firestore/study-plan/updateStudyPlan";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, Clock, CheckCircle2, BookOpen, Play, PanelLeftClose, PanelLeftOpen, Loader2 } from "lucide-react";
+import { ChevronLeft, Clock, CheckCircle2, BookOpen, Play, PanelLeftClose, PanelLeftOpen, Loader2, Sparkles, List, X } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/firebase";
 import { useAuth } from "@/context/AuthContext";
@@ -13,6 +13,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { markdownComponents } from "@/components/markdown-renderers";
 import PresentationPlayer from "@/components/PresentationPlayer";
+import { AiResultModal } from "@/components/library/AiResultModal";
+import { explainTextApi, summariseTextApi } from "@/lib/library/service";
 
 // Types matching Enhanced Study Plan Assets Schema
 type VideoSegment = {
@@ -73,12 +75,18 @@ export default function CourseDetailPage() {
   const params = useParams();
   const courseId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { userId } = useAuth();
+  const router = useRouter();
 
   // State for Firestore data
   const [studyPlan, setStudyPlan] = useState<StudyPlan | null>(null);
   const [dailyModules, setDailyModules] = useState<DailyModule[]>([]);
   const [loading, setLoading] = useState(true);
   const [assetUrls, setAssetUrls] = useState<Record<string, string>>({});
+
+  // AI Explain/Summarise State
+  const [contextMenuSelection, setContextMenuSelection] = useState<{ text: string; rect: DOMRect } | null>(null);
+  const [aiActionResult, setAiActionResult] = useState<{ title: string; content: string; originalText?: string } | null>(null);
+  const [aiActionStatus, setAiActionStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
 
   // UI state
   const [activeModuleDay, setActiveModuleDay] = useState<number | null>(null);
@@ -92,6 +100,62 @@ export default function CourseDetailPage() {
   const [selectedAnswers, setSelectedAnswers] = useState<(number | null)[]>([]);
   // Quiz summary state
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+        setContextMenuSelection(null);
+        return;
+    }
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+        setContextMenuSelection({
+            text: selection.toString(),
+            rect: rect,
+        });
+    }
+  };
+
+  const handleExplain = async (text: string) => {
+    setAiActionStatus("loading");
+    setContextMenuSelection(null);
+    try {
+        const currentModule = dailyModules.find(m => m.order === activeModuleDay);
+        // Try to get some context from the current module activities
+        const context = currentModule?.activities
+            .filter(a => a.type === 'text')
+            .map(a => a.content)
+            .join('\n\n') || "";
+
+        const explanation = await explainTextApi(text, context);
+        setAiActionResult({ title: "Explanation", content: explanation, originalText: text });
+        setAiActionStatus("success");
+    } catch (error) {
+        setAiActionResult({ title: "Error", content: "Failed to explain text", originalText: text });
+        setAiActionStatus("error");
+    }
+  };
+
+  const handleSummarise = async (text: string) => {
+    setAiActionStatus("loading");
+    setContextMenuSelection(null);
+    try {
+        const currentModule = dailyModules.find(m => m.order === activeModuleDay);
+        // Try to get some context from the current module activities
+        const context = currentModule?.activities
+            .filter(a => a.type === 'text')
+            .map(a => a.content)
+            .join('\n\n') || "";
+
+        const summary = await summariseTextApi(text, context);
+        setAiActionResult({ title: "Summary", content: summary, originalText: text });
+        setAiActionStatus("success");
+    } catch (error) {
+        setAiActionResult({ title: "Error", content: "Failed to summarise text", originalText: text });
+        setAiActionStatus("error");
+    }
+  };
 
   // Fetch study plan document
   useEffect(() => {
@@ -712,7 +776,12 @@ export default function CourseDetailPage() {
             })()
           ) : currentModule ? (
             /* MODULE SCROLL VIEW */
-            <div className="flex-1 overflow-y-auto relative">
+            <div 
+                className="flex-1 overflow-y-auto relative"
+                onMouseUp={handleTextSelection}
+                onKeyUp={handleTextSelection}
+                onScroll={() => setContextMenuSelection(null)}
+            >
                {/* Floating Sidebar Toggle (Only visible when sidebar closed) */}
                {!isSidebarOpen && (
                  <div className="sticky top-4 left-4 z-50 h-0">
@@ -948,6 +1017,54 @@ export default function CourseDetailPage() {
           )}
         </div>
       </div>
+
+     {contextMenuSelection && (
+          <div
+              className="fixed bg-background border rounded-lg shadow-xl p-1.5 flex items-center gap-1 z-50 animate-in fade-in zoom-in-95 duration-200"
+              style={{
+                  top: contextMenuSelection.rect.top - 48,
+                  left: Math.max(16, contextMenuSelection.rect.left),
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+          >
+              <Button variant="ghost" size="sm" onClick={() => handleExplain(contextMenuSelection.text)} className="h-8 px-2 text-xs font-normal">
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5 text-yellow-500" />
+                  Explain
+              </Button>
+              <div className="w-px h-4 bg-border mx-0.5" />
+              <Button variant="ghost" size="sm" onClick={() => handleSummarise(contextMenuSelection.text)} className="h-8 px-2 text-xs font-normal">
+                  <List className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
+                  Summarise
+              </Button>
+          </div>
+      )}
+
+      <AiResultModal 
+        result={aiActionResult} 
+        isLoading={aiActionStatus === "loading"}
+        onClose={() => {
+            setAiActionResult(null);
+            setAiActionStatus("idle");
+        }}
+        onAskAi={() => {
+            if (!aiActionResult) return;
+            const currentModule = dailyModules.find(m => m.order === activeModuleDay);
+            const context = {
+                noteContent: currentModule?.activities
+                    .filter(a => a.type === 'text')
+                    .map(a => a.content)
+                    .join('\n\n') || "",
+                resultContent: aiActionResult.content,
+                sourceTitle: studyPlan?.title || "Course Content",
+                sourceId: courseId as string,
+                sourceType: "Study Plan",
+                actionType: aiActionResult.title,
+                sourceSnippet: aiActionResult.originalText
+            };
+            sessionStorage.setItem("assistantContext", JSON.stringify(context));
+            router.push("/assistant");
+        }}
+      />
     </div>
   );
 }

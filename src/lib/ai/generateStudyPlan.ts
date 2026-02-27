@@ -174,7 +174,7 @@ export async function generateStudyPlan(
       If type == 'video', do NOT provide a single script. Instead, break the lecture into **a few of distinct slides** (segments).
       **Activity Content Rules:**
       - If type == 'video': Write a 'lecture_script' (engaging, spoken style) and 'slide_bullets'.
-      - If type == 'text': Write detailed 'content' in Markdown.
+      - If type == 'text': Write detailed 'content' in Markdown. You can use Mermaid diagrams to visualize concepts. Wrap Mermaid code in \`\`\`mermaid ... \`\`\`.
       - If type == 'quiz': Create a 'quiz_check' object with questions, options, and answers.
       - If type == 'image': Write a 'image_prompt' describing what the diagram should look like.
 

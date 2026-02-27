@@ -1,4 +1,5 @@
 import React from 'react';
+import MermaidDiagram from '@/components/MermaidDiagram';
 
 export const markdownComponents = {
   h1: ({ node, ...props }: any) => <h1 className="text-2xl font-bold mt-6 mb-4 first:mt-0" {...props} />,
@@ -19,6 +20,16 @@ export const markdownComponents = {
         </code>
       );
     }
+
+    // Check if the language is 'mermaid'
+    const match = /language-(\w+)/.exec(className || '');
+    const language = match ? match[1] : '';
+
+    if (language === 'mermaid') {
+        const chart = String(children).replace(/\n$/, '');
+        return <MermaidDiagram chart={chart} />;
+    }
+
     return (
       <pre className="mb-4 overflow-x-auto rounded-lg">
         <code className={`block bg-muted/50 p-4 text-sm font-mono text-foreground ${className || ''}`} {...props}>
