@@ -125,7 +125,7 @@ export async function updateActivityCompletionStatus(
   activities[activityIndex].updatedAt = Timestamp.now();
 
   // Check if all activities are completed
-  const allCompleted = activities.every(a => a.isCompleted === true);
+  const allCompleted = activities.every((a: any) => a.isCompleted === true);
 
   const now = Timestamp.now();
   
@@ -196,7 +196,7 @@ export async function bulkUpdateActivityCompletionStatus(
   });
 
   // Check if all activities are completed
-  const allCompleted = activities.every(a => a.isCompleted === true);
+  const allCompleted = activities.every((a: any) => a.isCompleted === true);
   const now = Timestamp.now();
   
   // Calculate progress based on completion status
@@ -254,7 +254,7 @@ export async function completeAllActivitiesInModule(
   const moduleData = moduleSnap.data();
   const activities = moduleData.activities || [];
 
-  activities.forEach(activity => {
+  activities.forEach((activity: any) => {
     activity.isCompleted = true;
     activity.updatedAt = Timestamp.now();
   });

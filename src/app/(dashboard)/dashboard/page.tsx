@@ -246,33 +246,42 @@ export default function DashboardPage() {
                 <div className="h-2 bg-muted rounded w-full"></div>
               </div>
             ) : activePlan ? (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="font-semibold text-lg line-clamp-1" title={activePlan.title}>
-                    {activePlan.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">{activePlan.progress}% complete</p>
+              <>
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="font-semibold text-lg line-clamp-1" title={activePlan.title}>
+                      {activePlan.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">{activePlan.progress}% complete</p>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-secondary overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-500 ease-in-out" 
+                      style={{ width: `${activePlan.progress}%` }} 
+                    />
+                  </div>
+                  <Link href={`/study-planner/${activePlan.id}`} className="block mt-4">
+                    <Button className="w-full gap-2 group">
+                      Resume Plan <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  </Link>
                 </div>
-                <div className="h-2.5 w-full rounded-full bg-secondary overflow-hidden">
-                  <div 
-                    className="h-full bg-primary transition-all duration-500 ease-in-out" 
-                    style={{ width: `${activePlan.progress}%` }} 
-                  />
+                <div className="flex items-center">
+                  <div className="ml-4 space-y-1">
+                    <p className="text-sm font-medium leading-none">Started &quot;Advanced Calculus&quot; Plan</p>
+                    <p className="text-sm text-muted-foreground">AI Courses</p>
+                  </div>
+                  <div className="ml-auto font-medium text-xs text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> 1d ago
+                  </div>
                 </div>
-                <Link href={`/study-planner/${activePlan.id}`} className="block mt-4">
-                  <Button className="w-full gap-2 group">
-                    Resume Plan <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                  </Button>
+              </>
+            ) : (
+              <div className="text-center py-10 flex flex-col items-center text-muted-foreground">
+                <p>No active study plan found.</p>
+                <Link href="/assistant" className="mt-4">
+                  <Button variant="outline" size="sm">Create New Plan</Button>
                 </Link>
-              </div>
-              <div className="flex items-center">
-                <div className="ml-4 space-y-1">
-                  <p className="text-sm font-medium leading-none">Started &quot;Advanced Calculus&quot; Plan</p>
-                  <p className="text-sm text-muted-foreground">AI Courses</p>
-                </div>
-                 <div className="ml-auto font-medium text-xs text-muted-foreground flex items-center gap-1">
-                   <Clock className="w-3 h-3" /> 1d ago
-                </div>
               </div>
             )}
           </CardContent>

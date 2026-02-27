@@ -183,7 +183,11 @@ export default function LibraryPage() {
 
     if (material.source === "file" && material.downloadURL && getDocumentPreviewKind(material) === "text") {
       setDocPreviewStatus("loading");
-      void getFilePreview(material.downloadURL)
+      void getFilePreview({
+        url: material.downloadURL, 
+        mimeType: material.mimeType || "", 
+        fileName: material.title 
+      })
         .then((data) => {
           if (data && typeof data === "object" && "text" in data && typeof data.text === "string") {
             setDocPreviewText(data.text);

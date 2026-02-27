@@ -45,6 +45,7 @@ type Activity = {
   quiz_check?: QuizQuestion[];
   assetStatus?: "pending" | "generating" | "ready" | "failed";
   assets?: ActivityAsset[];
+  isCompleted?: boolean;
 };
 
 type DailyModule = {
@@ -227,7 +228,7 @@ export default function CourseDetailPage() {
 
   const handleToggleSectionComplete = async () => {
     if (activeModuleDay === null || !currentModule) return;
-    let key;
+    let key: string;
     if (activeQuizIndex === null) {
       key = getSectionKey(activeModuleDay, "materials");
       // Learning material = all non-quiz activities
@@ -245,11 +246,11 @@ export default function CourseDetailPage() {
         return newSet;
       });
       // Update all non-quiz activities' completion status in Firestore
-      if (materialIndices.length > 0) {
+      if (materialIndices.length > 0 && courseId) {
         try {
           for (const idx of materialIndices) {
             await updateActivityCompletionStatus(
-              courseId,
+              courseId as string,
               currentModule.id,
               idx,
               willComplete
@@ -273,10 +274,10 @@ export default function CourseDetailPage() {
         return newSet;
       });
       // Update Firestore completion status
-      if (activityIndex !== -1) {
+      if (activityIndex !== -1 && courseId) {
         try {
           await updateActivityCompletionStatus(
-            courseId,
+            courseId as string,
             currentModule.id,
             activityIndex,
             !completedSections.has(key)
@@ -679,10 +680,10 @@ export default function CourseDetailPage() {
                               // Save quiz completion to Firestore immediately
                               if (activeModuleDay !== null && currentModule && activeQuizIndex !== null) {
                                 const activityIndex = currentModule.activities.findIndex((a, idx) => a.type === "quiz" && idx === activeQuizIndex);
-                                if (activityIndex !== -1) {
+                                if (activityIndex !== -1 && courseId) {
                                   try {
                                     await updateActivityCompletionStatus(
-                                      courseId,
+                                      courseId as string,
                                       currentModule.id,
                                       activityIndex,
                                       true
