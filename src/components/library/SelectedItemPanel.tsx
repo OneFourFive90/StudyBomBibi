@@ -1,7 +1,4 @@
-import { useState, useRef, useEffect } from "react";
-import Image from "next/image";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useState, useRef } from "react";
 import {
     Maximize2,
     Minimize2,
@@ -19,7 +16,6 @@ import {
     FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -86,7 +82,7 @@ export function SelectedItemPanel({
     onAiExplain,
     onAiSummarise
 }: SelectedItemPanelProps) {
-    const editorRef = useRef<HTMLElement | null>(null);
+    const editorRef = useRef<HTMLDivElement | null>(null);
     const [contextMenuSelection, setContextMenuSelection] = useState<{ text: string; rect: DOMRect } | null>(null);
 
     const handleTextSelection = () => {
@@ -122,8 +118,8 @@ export function SelectedItemPanel({
          // Keep it simple or pass as prop if needed.
          // Duplicating small logic is fine to decouple.
          switch (type) {
-            case "Note": return <Pencil className="h-5 w-5 text-yellow-500 mr-2" />;
-            default: return <FileText className="h-5 w-5 text-blue-500 mr-2" />;
+                case "Note": return <Pencil className="h-6 w-6 text-yellow-500 shrink-0" />;
+                default: return <FileText className="h-6 w-6 text-blue-500 shrink-0" />;
          }
     };
 
@@ -140,12 +136,12 @@ export function SelectedItemPanel({
               ${isFullView ? "w-full" : "w-full md:relative md:w-1/3 md:shrink-0 md:shadow-none"}
             `}
             >
-                <div className="flex items-center justify-between p-6 border-b">
-                    <div className="flex items-center gap-3 overflow-hidden">
+                <div className="flex items-start justify-between gap-3 p-6 border-b">
+                    <div className="flex items-start gap-3 overflow-hidden min-w-0 flex-1">
                         {getIcon(selectedItem.type)}
-                        <h2 className="text-xl font-semibold break-words">{selectedItem.title}</h2>
+                        <h2 className="text-xl font-semibold leading-tight truncate min-w-0">{selectedItem.title}</h2>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 shrink-0">
                         {selectedItem.type === "Note" && (
                             <div className="bg-muted p-1 rounded-lg flex gap-1 mr-2">
                                 <Button
@@ -203,7 +199,6 @@ export function SelectedItemPanel({
                                    onUpdateNoteContent(content);
                                 }
                             }}
-                            // @ts-ignore
                             editorRef={editorRef}
                             noteBaselineContent={noteBaselineContent}
                         />

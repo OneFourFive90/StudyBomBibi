@@ -132,7 +132,7 @@ export async function createNoteApi(name: string, folderId: string | null, conte
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      name,
+      title: name,
       folderId,
       content,
     }),
