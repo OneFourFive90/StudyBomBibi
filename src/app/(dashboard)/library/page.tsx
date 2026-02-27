@@ -9,11 +9,19 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { StatusToast } from "@/components/ui/status-toast";
 import { RenameModal } from "@/components/ui/rename-modal";
 import { MovePickerModal } from "@/components/ui/move-picker-modal";
 import { useToastMessage } from "@/hooks/use-toast-message";
-import { UPLOAD_FILE_ACCEPT } from "@/lib/upload/fileTypePolicy";
+import { UPLOAD_FILE_ACCEPT, isAllowedUploadFileType } from "@/lib/upload/fileTypePolicy";
 import {
   Book,
   FileText,
@@ -33,6 +41,9 @@ import {
   Trash2,
   FolderInput,
   ExternalLink,
+  MoreVertical,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 type MaterialType = "PDF" | "Note" | "Document" | "Folder";
@@ -143,11 +154,13 @@ export default function LibraryPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isFullView, setIsFullView] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [pendingNewNoteName, setPendingNewNoteName] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
   const [pendingRename, setPendingRename] = useState<PendingRenameAction | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
@@ -637,6 +650,42 @@ export default function LibraryPage() {
     }
   };
 
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Check if dragging files, not internal items
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      if (isAllowedUploadFileType(file.type, file.name)) {
+        setPendingUploadFile(file);
+      } else {
+        showToast("File type not supported", "error");
+      }
+    }
+    e.dataTransfer.clearData();
+  };
+
   const handleUpload = () => {
     fileInputRef.current?.click();
     setShowAddMenu(false);
@@ -954,6 +1003,95 @@ export default function LibraryPage() {
       : `${normalizedNewNoteName}.md`
   );
 
+  const handleItemDragStart = (e: React.DragEvent, material: Material) => {
+    e.dataTransfer.setData("application/json", JSON.stringify({ id: material.id, type: material.source }));
+    e.dataTransfer.effectAllowed = "move";
+
+    // Set custom drag image to show the whole card visually
+    const cardElement = e.currentTarget as HTMLElement;
+    const rect = cardElement.getBoundingClientRect();
+    
+    // Create a clone to be the drag image
+    const dragImage = cardElement.cloneNode(true) as HTMLElement;
+    dragImage.style.position = "absolute";
+    dragImage.style.top = "-9999px";
+    dragImage.style.width = `${rect.width}px`;
+    dragImage.style.height = `${rect.height}px`;
+    dragImage.style.opacity = "0.8"; // Make it slightly transparent
+    dragImage.classList.add("bg-background", "shadow-xl", "border-primary"); // Add some styles
+    
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 10, 10);
+    
+    // Clean up the clone after a short delay (browser needs it for a moment)
+    setTimeout(() => {
+        document.body.removeChild(dragImage);
+    }, 0);
+  };
+
+  const handleItemDragOver = (e: React.DragEvent, material: Material) => {
+    if (material.type === "Folder") {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      
+      if (dragOverFolderId !== material.id) {
+          setDragOverFolderId(material.id);
+      }
+    } else {
+        // Reset if dragging over a file
+        if (dragOverFolderId) {
+            setDragOverFolderId(null);
+        }
+    }
+  };
+  
+  const handleItemDragLeave = (e: React.DragEvent) => {
+      // Logic to clear dragOverFolderId when leaving a folder
+      // This can be tricky with child elements, often easier to handle in DragOver or Drop
+      // But clearing it here if we leave the specific card helps
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOverFolderId(null);
+  }
+
+  const handleItemDrop = async (e: React.DragEvent, targetFolder: Material) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+
+    if (targetFolder.type !== "Folder") {
+        showToast("Cannot move into a file", "error");
+        return;
+    }
+
+    try {
+      const data = e.dataTransfer.getData("application/json");
+      if (!data) return;
+
+      const draggedItem = JSON.parse(data);
+      if (draggedItem.id === targetFolder.id) {
+          showToast("Cannot move a folder into itself", "error");
+          return; 
+      }
+      
+      // Check if trying to move into its own child (circular dependency) - basic check 
+      // Ideally we check if targetFolder is a descendant of draggedItem
+      
+      showLoading(`Moving item to ${targetFolder.title}...`);
+
+      // Call appropriate move function
+      if (draggedItem.type === "folder") {
+        await handleMoveFolder(draggedItem.id, targetFolder.id);
+      } else {
+        await handleMoveFile(draggedItem.id, targetFolder.id);
+      }
+    } catch (err) {
+      console.error("Failed to parse drag data", err);
+      showToast("Failed to move item", "error");
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
       <StatusToast toast={toast} onClose={clearToast} />
@@ -1089,7 +1227,18 @@ export default function LibraryPage() {
         accept={UPLOAD_FILE_ACCEPT}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4">
+      <div 
+        className="flex-1 flex flex-col min-w-0 h-full overflow-hidden px-4 relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDraggingOver && (
+          <div className="absolute inset-4 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center border-2 border-dashed border-primary rounded-lg pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+            <Upload className="h-12 w-12 text-primary mb-4" />
+            <p className="text-xl font-medium text-primary">Drop file here to upload</p>
+          </div>
+        )}
         <div className="flex-none flex flex-col gap-4 md:flex-row md:items-center md:justify-between pb-4 border-b shrink-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
@@ -1114,6 +1263,27 @@ export default function LibraryPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
+            </div>
+
+            <div className="flex bg-muted rounded-lg p-1 shrink-0">
+               <Button
+                 variant={viewMode === "grid" ? "secondary" : "ghost"}
+                 size="sm"
+                 className="h-8 px-2"
+                 onClick={() => setViewMode("grid")}
+                 title="Grid View"
+               >
+                 <LayoutGrid className="h-4 w-4" />
+               </Button>
+               <Button
+                 variant={viewMode === "list" ? "secondary" : "ghost"}
+                 size="sm"
+                 className="h-8 px-2"
+                 onClick={() => setViewMode("list")}
+                 title="List View"
+               >
+                 <List className="h-4 w-4" />
+               </Button>
             </div>
 
             <div className="relative" onClick={(event) => event.stopPropagation()}>
@@ -1169,11 +1339,21 @@ export default function LibraryPage() {
             </div>
           )}
 
+          {viewMode === "grid" ? (
           <div className={`grid gap-6 pb-8 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
             {displayedMaterials.map((material) => (
               <Card
                 key={material.id}
-                className="hover:bg-muted/50 transition-colors cursor-pointer group flex flex-col min-w-0"
+                draggable
+                onDragStart={(e) => handleItemDragStart(e, material)}
+                onDragOver={(e) => {
+                    handleItemDragOver(e, material);
+                }}
+                onDragLeave={handleItemDragLeave}
+                onDrop={(e) => handleItemDrop(e, material)}
+                className={`hover:bg-muted/50 transition-colors cursor-pointer group flex flex-col min-w-0 relative ${
+                    dragOverFolderId === material.id ? "ring-2 ring-primary bg-primary/10" : ""
+                }`}
                 onClick={() => {
                   if (material.type === "Folder") {
                     setCurrentFolderId(material.id);
@@ -1182,7 +1362,7 @@ export default function LibraryPage() {
                   }
                 }}
               >
-                <CardHeader className="flex flex-row items-center gap-4 pb-2 space-y-0">
+                <CardHeader className="flex flex-row items-center gap-4 pb-2 space-y-0 relative">
                   <div className="p-2 bg-background rounded-md border shadow-sm group-hover:border-primary/50 transition-colors shrink-0">
                     {getIcon(material.type)}
                   </div>
@@ -1191,44 +1371,148 @@ export default function LibraryPage() {
                     <CardDescription className="text-sm mt-1 break-words">{material.author || "Unknown Author"}</CardDescription>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="relative pb-8">
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <span className="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground shrink-0">
                       {material.type}
                     </span>
                   </div>
-
-                  {material.source === "folder" && (
-                    <div className="flex gap-2 mt-4" onClick={(event) => event.stopPropagation()}>
-                      <Button variant="outline" size="sm" onClick={() => requestRenameFolder(material.id, material.title)}>
-                        <PenLine className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => requestMoveFolder(material.id)}>
-                        <FolderInput className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => requestDeleteFolder(material.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-
-                  {material.source === "file" && (
-                    <div className="flex gap-2 mt-4" onClick={(event) => event.stopPropagation()}>
-                      <Button variant="outline" size="sm" onClick={() => requestRenameFile(material.id, material.title)}>
-                        <PenLine className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => requestMoveFile(material.id)}>
-                        <FolderInput className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => requestDeleteFile(material.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
+                  <div className="absolute bottom-2 right-2" onClick={(event) => event.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity data-[state=open]:opacity-100">
+                          <MoreVertical className="h-4 w-4" />
+                          <span className="sr-only">Actions</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestRenameFolder(material.id, material.title)
+                              : requestRenameFile(material.id, material.title)
+                          }
+                        >
+                          <PenLine className="h-4 w-4 mr-2" /> Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestMoveFolder(material.id)
+                              : requestMoveFile(material.id)
+                          }
+                        >
+                          <FolderInput className="h-4 w-4 mr-2" /> Move to
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestDeleteFolder(material.id)
+                              : requestDeleteFile(material.id)
+                          }
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </CardContent>
               </Card>
             ))}
           </div>
+          ) : (
+            <div className="flex flex-col space-y-2 pb-8">
+              <div className="flex items-center px-4 py-2 text-sm text-muted-foreground font-medium border-b">
+                <div className="w-[40px]"></div>
+                <div className="flex-1 min-w-0">Name</div>
+                <div className="w-[120px]">Type</div>
+                <div className="w-[150px] hidden md:block">Author</div>
+                <div className="w-[40px]"></div>
+              </div>
+              {displayedMaterials.map((material) => (
+                <div
+                  key={material.id}
+                  draggable
+                  onDragStart={(e) => handleItemDragStart(e, material)}
+                  onDragOver={(e) => handleItemDragOver(e, material)}
+                  onDragLeave={handleItemDragLeave}
+                  onDrop={(e) => handleItemDrop(e, material)}
+                  className={`flex items-center px-4 py-3 border rounded-lg hover:bg-muted/50 cursor-pointer group transition-colors ${
+                      dragOverFolderId === material.id ? "ring-2 ring-primary bg-primary/10" : ""
+                  }`}
+                  onClick={() => {
+                    if (material.type === "Folder") {
+                      setCurrentFolderId(material.id);
+                    } else {
+                      setSelectedItem(material);
+                    }
+                  }}
+                >
+                  <div className="w-[40px] flex justify-center shrink-0">
+                    <div className="bg-background rounded-md border shadow-sm p-1.5 shrink-0">
+                      {getIcon(material.type)}
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0 px-4">
+                    <div className="font-medium truncate">{material.title}</div>
+                  </div>
+                  <div className="w-[120px] text-sm text-muted-foreground shrink-0 flex items-center">
+                    <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold bg-secondary text-secondary-foreground">
+                      {material.type}
+                    </span>
+                  </div>
+                  <div className="w-[150px] hidden md:block text-sm text-muted-foreground truncate shrink-0">
+                    {material.author || "Unknown"}
+                  </div>
+                  <div className="w-[40px] flex justify-end shrink-0" onClick={(event) => event.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity data-[state=open]:opacity-100">
+                          <MoreVertical className="h-4 w-4" />
+                          <span className="sr-only">Actions</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestRenameFolder(material.id, material.title)
+                              : requestRenameFile(material.id, material.title)
+                          }
+                        >
+                          <PenLine className="h-4 w-4 mr-2" /> Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestMoveFolder(material.id)
+                              : requestMoveFile(material.id)
+                          }
+                        >
+                          <FolderInput className="h-4 w-4 mr-2" /> Move to
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => 
+                            material.source === "folder" 
+                              ? requestDeleteFolder(material.id)
+                              : requestDeleteFile(material.id)
+                          }
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

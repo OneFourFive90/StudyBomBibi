@@ -170,13 +170,13 @@ export default function DashboardPage() {
           </Button>
         </Link>
         <Link href="/library" className="block group">
-          <Button variant="secondary" className="w-full h-auto py-4 flex flex-col items-center gap-2 shadow-sm border border-transparent group-hover:border-border transition-all">
+          <Button variant="default" className="w-full h-auto py-4 flex flex-col items-center gap-2 shadow-sm border border-transparent group-hover:border-border transition-all">
             <UploadCloud className="h-6 w-6" />
             <span className="font-semibold text-base">Upload Material</span>
           </Button>
         </Link>
         <Link href="/assistant" className="block group">
-          <Button variant="outline" className="w-full h-auto py-4 flex flex-col items-center gap-2 shadow-sm hover:bg-muted transition-all bg-background">
+          <Button variant="default" className="w-full h-auto py-4 flex flex-col items-center gap-2 shadow-sm border border-transparent group-hover:border-border transition-all">
             <MessageSquare className="h-6 w-6" />
             <span className="font-semibold text-base">Ask AI Assistant</span>
           </Button>
