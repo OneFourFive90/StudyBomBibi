@@ -203,10 +203,10 @@ export default function ExamPrepPage() {
     <Card key={exam.id} className="hover:shadow-md transition-shadow bg-card text-card-foreground">
       <CardHeader>
         <div className="flex justify-between items-start gap-2">
-          <div>
-            <CardTitle>{exam.title}</CardTitle>
+          <div className="min-w-0 flex-1 pr-2">
+            <CardTitle className="leading-snug tracking-normal whitespace-normal break-words">{exam.title}</CardTitle>
           </div>
-          <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap shrink-0 ${
             exam.mode === "mcq"
               ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
               : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
