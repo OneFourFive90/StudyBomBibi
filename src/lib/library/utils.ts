@@ -130,6 +130,20 @@ export function getFilteredMaterials(
     currentFolderId: string | null,
     searchQuery: string
 ): Material[] {
+    if (searchQuery) {
+        const lowerQuery = searchQuery.toLowerCase();
+        
+        const folderMaterials = allFolders
+            .map(toFolderMaterial)
+            .filter((m) => m.title.toLowerCase().includes(lowerQuery));
+
+        const fileMaterials = allFiles
+            .map(toFileMaterial)
+            .filter((m) => m.title.toLowerCase().includes(lowerQuery));
+            
+        return [...folderMaterials, ...fileMaterials].sort((a, b) => a.title.localeCompare(b.title));
+    }
+
     const folderMaterials = allFolders
         .filter((f) => f.parentFolderId === currentFolderId)
         .map(toFolderMaterial)
@@ -140,12 +154,5 @@ export function getFilteredMaterials(
         .map(toFileMaterial)
         .sort((a, b) => a.title.localeCompare(b.title));
 
-    const combined = [...folderMaterials, ...fileMaterials];
-    
-    if (!searchQuery) return combined;
-    
-    const lowerQuery = searchQuery.toLowerCase();
-    return combined.filter((material) => 
-        material.title.toLowerCase().includes(lowerQuery)
-    );
+    return [...folderMaterials, ...fileMaterials];
 }

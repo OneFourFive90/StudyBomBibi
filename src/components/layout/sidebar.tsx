@@ -56,10 +56,10 @@ export function Sidebar({ className, onLinkClick, isCollapsed = false, onToggleC
           isCollapsed ? "justify-center p-2" : "justify-between p-6"
         )}
       >
-        <Link href="/" className={cn("flex items-center transition-all duration-300", isCollapsed ? "justify-center" : "space-x-2")}>
+        <div className={cn("flex items-center transition-all duration-300", isCollapsed ? "justify-center" : "space-x-2")}>
           <Image src="/favicon.ico" alt="Logo" width={24} height={24} />
           {!isCollapsed && <span className="text-xl font-bold tracking-tight whitespace-nowrap overflow-hidden">StudyBomBibi</span>}
-        </Link>
+        </div>
         
         {/* Mobile close button */}
         {onLinkClick && (
