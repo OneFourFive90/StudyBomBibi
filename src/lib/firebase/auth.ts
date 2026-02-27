@@ -11,21 +11,34 @@ import {
   UserCredential,
 } from 'firebase/auth';
 import { auth } from './firebase';
-import { createUserProfile } from './firestore/userProfile';
+import { createUserProfile, getUserProfile } from './firestore/userProfile';
+
+async function ensureUserProfileExists(user: User): Promise<void> {
+  const email = user.email ?? '';
+  if (!email) {
+    return;
+  }
+
+  const existingProfile = await getUserProfile(user.uid);
+  if (!existingProfile) {
+    await createUserProfile(user.uid, email, user.displayName ?? '');
+  }
+}
+
+async function ensureUserProfileSafe(user: User, context: string): Promise<void> {
+  try {
+    await ensureUserProfileExists(user);
+  } catch (error) {
+    console.error(`Failed to ensure user profile during ${context}:`, error);
+  }
+}
 
 /**
  * Sign up with email and password
  */
 export async function signUp(email: string, password: string): Promise<UserCredential> {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-  
-  // Create user profile in Firestore
-  try {
-    await createUserProfile(userCredential.user.uid, email);
-  } catch (error) {
-    console.error('Failed to create user profile:', error);
-    // Continue even if profile creation fails (auth is still created)
-  }
+  await ensureUserProfileSafe(userCredential.user, 'email sign-up');
   
   return userCredential;
 }
@@ -34,7 +47,9 @@ export async function signUp(email: string, password: string): Promise<UserCrede
  * Sign in with email and password
  */
 export async function signIn(email: string, password: string): Promise<UserCredential> {
-  return signInWithEmailAndPassword(auth, email, password);
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  await ensureUserProfileSafe(userCredential.user, 'email sign-in');
+  return userCredential;
 }
 
 /**
@@ -44,18 +59,7 @@ export async function signInWithGoogle(): Promise<UserCredential> {
   const provider = new GoogleAuthProvider();
   const userCredential = await signInWithPopup(auth, provider);
 
-  // If this is a new user, create a Firestore profile
-  try {
-    // additionalUserInfo may be undefined, guard it
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyCred = userCredential as any;
-    if (anyCred?.additionalUserInfo?.isNewUser) {
-      const email = userCredential.user.email ?? '';
-      await createUserProfile(userCredential.user.uid, email);
-    }
-  } catch (err) {
-    console.error('Failed to create Firestore profile for Google sign-in:', err);
-  }
+  await ensureUserProfileSafe(userCredential.user, 'Google sign-in');
 
   return userCredential;
 }
