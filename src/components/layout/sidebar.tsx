@@ -16,14 +16,14 @@ const sidebarNavItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "AI Courses",
-    href: "/courses",
-    icon: BookOpen,
-  },
-  {
     title: "My Library",
     href: "/library",
     icon: Library,
+  },
+  {
+    title: "AI Courses",
+    href: "/courses",
+    icon: BookOpen,
   },
   {
     title: "Exam Prep",

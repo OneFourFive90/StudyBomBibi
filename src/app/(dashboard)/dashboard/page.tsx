@@ -236,7 +236,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3 border-b">
             <CardTitle className="text-lg flex items-center gap-2">
               <Activity className="h-5 w-5 text-primary" />
-              Active Study Plan
+              Active Courses
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col justify-center pt-6">
@@ -260,20 +260,11 @@ export default function DashboardPage() {
                       style={{ width: `${activePlan.progress}%` }} 
                     />
                   </div>
-                  <Link href={`/study-planner/${activePlan.id}`} className="block mt-4">
+                  <Link href={`/courses/${activePlan.id}`} className="block mt-4">
                     <Button className="w-full gap-2 group">
-                      Resume Plan <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      Resume Learning <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Button>
                   </Link>
-                </div>
-                <div className="flex items-center">
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Started &quot;Advanced Calculus&quot; Plan</p>
-                    <p className="text-sm text-muted-foreground">AI Courses</p>
-                  </div>
-                  <div className="ml-auto font-medium text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> 1d ago
-                  </div>
                 </div>
               </>
             ) : (
