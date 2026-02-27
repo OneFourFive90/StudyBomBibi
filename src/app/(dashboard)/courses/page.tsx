@@ -3,27 +3,19 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { 
   Clock, 
-  X, 
-  Folder, 
-  FileText, 
-  CheckCircle2, 
   Sparkles,
-  ChevronRight,
-  ChevronLeft,
   ChevronDown,
-  ChevronUp,
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/firebase";
+import { db, auth } from "@/lib/firebase/firebase";
 import { useAuth } from "@/context/AuthContext";
+import { GenerateCourseModal } from "@/components/generate-course-modal";
 
 // Types
 type StudyPlan = {
@@ -34,7 +26,7 @@ type StudyPlan = {
   currentDay: number;
   hoursPerDay: number;
   progress: number;
-  status: string;
+  status: "active" | "completed";
   format: "Text" | "Image" | "Video";
   createdAt: Date;
   updatedAt: Date;
@@ -48,7 +40,7 @@ type Material = {
   parentId: string | null;
 };
 
-// Mock Library Data (Folders & Files)
+// Mock Library Data (Folders & Files) - used as fallback if no real files exist
 const mockLibraryMaterials: Material[] = [
   { id: "1", title: "Introduction to CS", type: "Folder", parentId: null },
   { id: "2", title: "Data Structures", type: "Folder", parentId: null },
@@ -62,6 +54,7 @@ const mockLibraryMaterials: Material[] = [
 
 export default function AICoursePage() {
   const { userId } = useAuth();
+  const router = useRouter();
 
   // --- State ---
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([]);
@@ -72,28 +65,7 @@ export default function AICoursePage() {
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   
   // Material Selection State
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  
-  // Form State
-  const [newCourse, setNewCourse] = useState<{
-    topic: string;
-    customPrompt: string;
-    availability: string;
-    format: "Text" | "Image" | "Video";
-    difficulty: "Beginner" | "Intermediate" | "Advanced";
-    pace: "Slow" | "Normal" | "Fast";
-    focusAreas: string;
-    selectedMaterials: string[];
-  }>({
-    topic: "",
-    customPrompt: "",
-    availability: "",
-    format: "Text",
-    difficulty: "Beginner",
-    pace: "Normal",
-    focusAreas: "",
-    selectedMaterials: [],
-  });
+  const [libraryMaterials, setLibraryMaterials] = useState<Material[]>(mockLibraryMaterials);
 
   // Fetch study plans for the current user
   useEffect(() => {
@@ -125,57 +97,70 @@ export default function AICoursePage() {
     fetchPlans();
   }, [userId]);
 
-  // --- Handlers ---
+  // Fetch library materials from API (files and folders)
+  useEffect(() => {
+    const fetchLibraryMaterials = async () => {
+      if (!userId) return;
+      
+      try {
+        // Get ID token for authentication
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
 
-  const handleCreateCourse = async () => {
-    if (!userId) return;
-    
-    try {
-      // TODO: Call backend API to create the study plan
-      // For now, just add to local state and close the modal
-      const now = new Date();
-      const createdPlan: StudyPlan = {
-        id: `plan_${Date.now()}`,
-        courseTitle: newCourse.topic || "Untitled Course",
-        description: `AI-generated personalized course${newCourse.customPrompt ? ` - ${newCourse.customPrompt}` : ''}`,
-        totalDays: 7,
-        currentDay: 1,
-        hoursPerDay: parseInt(newCourse.availability) || 10,
-        status: "generating",
-        format: newCourse.format,
-        createdAt: now,
-        updatedAt: now,
-        ownerId: userId,
-      };
+        // Fetch files using existing API
+        const filesResponse = await fetch("/api/get-files", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      setStudyPlans([createdPlan, ...studyPlans]);
-      setIsCreating(false);
-      // Reset form
-      setNewCourse({
-        topic: "",
-        customPrompt: "",
-        availability: "",
-        format: "Text",
-        difficulty: "Beginner",
-        pace: "Normal",
-        focusAreas: "",
-        selectedMaterials: [],
-      });
-    } catch (error) {
-      console.error('Error creating course:', error);
-    }
-  };
+        if (!filesResponse.ok) throw new Error("Failed to fetch files");
+        const filesData = await filesResponse.json();
+        
+        // Fetch folders from Firestore
+        const foldersRef = collection(db, 'folders');
+        const foldersQuery = query(foldersRef, where('ownerId', '==', userId));
+        const foldersSnapshot = await getDocs(foldersQuery);
 
-  const toggleMaterialSelection = (id: string) => {
-    setNewCourse(prev => {
-      const isSelected = prev.selectedMaterials.includes(id);
-      if (isSelected) {
-        return { ...prev, selectedMaterials: prev.selectedMaterials.filter(m => m !== id) };
-      } else {
-        return { ...prev, selectedMaterials: [...prev.selectedMaterials, id] };
+        const materials: Material[] = [];
+
+        // Add folders
+        foldersSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          materials.push({
+            id: doc.id,
+            title: data.name || "Untitled Folder",
+            type: "Folder" as const,
+            parentId: data.parentFolderId || null,
+          });
+        });
+
+        // Add files
+        if (filesData.files && Array.isArray(filesData.files)) {
+          filesData.files.forEach((file: any) => {
+            materials.push({
+              id: file.id,
+              title: file.originalName || file.name || "Untitled",
+              type: "File" as const,
+              parentId: file.folderId || null,
+            });
+          });
+        }
+
+        // Only update if we found materials
+        if (materials.length > 0) {
+          setLibraryMaterials(materials);
+        }
+      } catch (error) {
+        console.error('Error fetching library materials:', error);
+        // Keep using mock materials if fetch fails
       }
-    });
-  };
+    };
+
+    fetchLibraryMaterials();
+  }, [userId]);
+
+  // --- Handlers ---
 
   const getSortedPlans = () => {
     const sorted = [...studyPlans];
@@ -328,13 +313,11 @@ export default function AICoursePage() {
                       <CardTitle className="text-xl">{plan.courseTitle}</CardTitle>
                       <div className="flex flex-col gap-1 items-end">
                         <div className={`text-xs px-2 py-1 rounded-full ${
-                          plan.status === 'generating' 
-                            ? 'bg-yellow-500/10 text-yellow-700'
-                            : plan.status === 'ready'
-                            ? 'bg-green-500/10 text-green-700'
-                            : 'bg-red-500/10 text-red-700'
+                          plan.status === 'active' 
+                            ? 'bg-blue-500/10 text-blue-700'
+                            : 'bg-green-500/10 text-green-700'
                         }`}>
-                          {plan.status === 'generating' ? 'Generating...' : plan.status === 'ready' ? 'Ready' : 'Error'}
+                          {plan.status === 'active' ? 'Ongoing' : 'Completed'}
                         </div>
                       </div>
                     </div>
@@ -382,296 +365,16 @@ export default function AICoursePage() {
       </div>
 
       {/* --- Create Course Modal (Overlay) --- */}
-      {isCreating && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border text-card-foreground shadow-lg rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            
-            <div className="flex items-center justify-between p-6 border-b">
-              <div>
-                <h2 className="text-2xl font-semibold">Generate AI Course</h2>
-                <p className="text-sm text-muted-foreground">Create a personalized course from your materials with custom AI prompts and preferences.</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setIsCreating(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
-              
-              {/* Step 1: Basic Course Info */}
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="topic">Course Topic</Label>
-                  <Input 
-                    id="topic" 
-                    placeholder="e.g. Master Linear Algebra, Introduction to Machine Learning" 
-                    value={newCourse.topic}
-                    onChange={(e) => setNewCourse({...newCourse, topic: e.target.value})}
-                  />
-                </div>
-                
-                <div className="grid gap-2">
-                  <Label htmlFor="customPrompt">Custom AI Prompt (Optional)</Label>
-                  <Textarea 
-                    id="customPrompt" 
-                    placeholder="e.g. Focus on practical applications, include lots of examples, make it beginner-friendly..."
-                    rows={3}
-                    value={newCourse.customPrompt}
-                    onChange={(e) => setNewCourse({...newCourse, customPrompt: e.target.value})}
-                  />
-                  <p className="text-xs text-muted-foreground">Tell the AI how you want your course structured and what to emphasize.</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="availability">Weekly Hours</Label>
-                    <Input 
-                      id="availability" 
-                      type="number" 
-                      placeholder="e.g. 10" 
-                      value={newCourse.availability}
-                      onChange={(e) => setNewCourse({...newCourse, availability: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label>Content Format</Label>
-                    <div className="flex items-center space-x-4 pt-2">
-                        <div className="flex items-center space-x-2">
-                          <input 
-                              type="radio" 
-                              id="fmt-text" 
-                              name="format" 
-                              value="Text" 
-                              checked={newCourse.format === "Text"}
-                              onChange={() => setNewCourse({...newCourse, format: "Text"})}
-                              className="radio w-4 h-4 border-primary text-primary"
-                          />
-                          <Label htmlFor="fmt-text">Text</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input 
-                              type="radio" 
-                              id="fmt-image" 
-                              name="format" 
-                              value="Image" 
-                              checked={newCourse.format === "Image"}
-                              onChange={() => setNewCourse({...newCourse, format: "Image"})}
-                              className="radio w-4 h-4 border-primary text-primary"
-                          />
-                          <Label htmlFor="fmt-image">Image</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <input 
-                              type="radio" 
-                              id="fmt-video" 
-                              name="format" 
-                              value="Video" 
-                              checked={newCourse.format === "Video"}
-                              onChange={() => setNewCourse({...newCourse, format: "Video"})}
-                              className="radio w-4 h-4 border-primary text-primary"
-                          />
-                          <Label htmlFor="fmt-video">Video</Label>
-                        </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Learning Preferences */}
-                <div className="space-y-4 pt-4 border-t">
-                  <h3 className="font-medium">Learning Preferences</h3>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Difficulty Level</Label>
-                      <select 
-                        className="w-full p-2 border rounded-md text-sm" 
-                        value={newCourse.difficulty}
-                        onChange={(e) => setNewCourse({...newCourse, difficulty: e.target.value as "Beginner" | "Intermediate" | "Advanced"})}
-                      >
-                        <option value="Beginner">Beginner</option>
-                        <option value="Intermediate">Intermediate</option>
-                        <option value="Advanced">Advanced</option>
-                      </select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Learning Pace</Label>
-                      <select 
-                        className="w-full p-2 border rounded-md text-sm" 
-                        value={newCourse.pace}
-                        onChange={(e) => setNewCourse({...newCourse, pace: e.target.value as "Slow" | "Normal" | "Fast"})}
-                      >
-                        <option value="Slow">Slow & Detailed</option>
-                        <option value="Normal">Normal</option>
-                        <option value="Fast">Fast & Concise</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="focusAreas">Focus Areas (Optional)</Label>
-                    <Input 
-                      id="focusAreas" 
-                      placeholder="e.g. Practical Applications, Theory, Problem Solving (comma-separated)" 
-                      value={newCourse.focusAreas}
-                      onChange={(e) => setNewCourse({...newCourse, focusAreas: e.target.value})}
-                    />
-                    <p className="text-xs text-muted-foreground">Specific topics or skills you want to emphasize in this course.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Step 2: Select Materials (Split View) */}
-              <div className="space-y-4 pt-4 border-t flex-1 flex flex-col min-h-0">
-                <div>
-                  <h3 className="text-lg font-medium mb-1">Reference Materials</h3>
-                  <p className="text-sm text-muted-foreground">Select files, documents, or folders that the AI should reference when creating your course.</p>
-                </div>
-
-                <div className="flex border rounded-md h-[300px] overflow-hidden">
-                    {/* Left: Folder Navigation & List */}
-                    <div className="flex-1 flex flex-col border-r bg-background">
-                        {/* Breadcrumbs / Header */}
-                        <div className="p-3 border-b bg-muted/30 flex items-center gap-2 text-sm">
-                            {currentFolderId ? (
-                                <>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setCurrentFolderId(null)}>
-                                        <ChevronLeft className="h-4 w-4" />
-                                    </Button>
-                                    <span className="font-medium truncate">
-                                        {mockLibraryMaterials.find(m => m.id === currentFolderId)?.title}
-                                    </span>
-                                </>
-                            ) : (
-                                <span className="font-medium px-2">Library Root</span>
-                            )}
-                        </div>
-                        
-                        {/* List */}
-                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                            {mockLibraryMaterials
-                                .filter(m => m.parentId === currentFolderId)
-                                .map(material => {
-                                    const isSelected = newCourse.selectedMaterials.includes(material.id);
-                                    return (
-                                        <div 
-                                            key={material.id}
-                                            className={`
-                                                flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer text-sm
-                                                ${isSelected ? 'bg-primary/10' : ''}
-                                            `}
-                                        >
-                                            <div 
-                                                className="flex items-center gap-2 flex-1 truncate"
-                                                onClick={() => {
-                                                    if (material.type === 'Folder') {
-                                                        setCurrentFolderId(material.id);
-                                                    } else {
-                                                        toggleMaterialSelection(material.id);
-                                                    }
-                                                }}
-                                            >
-                                                {material.type === 'Folder' ? (
-                                                    <Folder className="h-4 w-4 text-blue-500 fill-blue-500/20" />
-                                                ) : (
-                                                    <FileText className="h-4 w-4 text-orange-500" />
-                                                )}
-                                                <span className="truncate">{material.title}</span>
-                                            </div>
-
-                                            {material.type === 'Folder' ? (
-                                                <div className="flex items-center gap-1">
-                                                    <div 
-                                                        className={`p-1 rounded-sm hover:bg-background cursor-pointer ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            toggleMaterialSelection(material.id);
-                                                        }}
-                                                    >
-                                                        {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-3 w-3 border rounded-sm" />}
-                                                    </div>
-                                                    <div 
-                                                        className="p-1 rounded-sm hover:bg-background cursor-pointer" 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setCurrentFolderId(material.id);
-                                                        }}
-                                                    >
-                                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div 
-                                                    className={`p-1 rounded-sm hover:bg-background cursor-pointer ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleMaterialSelection(material.id);
-                                                    }}
-                                                >
-                                                    {isSelected ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-3 w-3 border rounded-sm" />}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            
-                            {mockLibraryMaterials.filter(m => m.parentId === currentFolderId).length === 0 && (
-                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm p-4">
-                                    <Folder className="h-8 w-8 mb-2 opacity-50" />
-                                    <p>Empty Folder</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right: Selected Summary Panel */}
-                    <div className="w-[180px] bg-muted/10 flex flex-col">
-                        <div className="p-3 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground bg-muted/30">
-                            Selected
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                             {newCourse.selectedMaterials.length === 0 ? (
-                                <p className="text-xs text-muted-foreground text-center mt-10">No materials selected</p>
-                             ) : (
-                                newCourse.selectedMaterials.map(id => {
-                                    const item = mockLibraryMaterials.find(m => m.id === id);
-                                    if (!item) return null;
-                                    return (
-                                        <div key={id} className="group flex items-start justify-between gap-2 text-xs bg-background border p-2 rounded shadow-sm">
-                                            <span className="truncate flex-1">{item.title}</span>
-                                            <button 
-                                                onClick={() => toggleMaterialSelection(id)}
-                                                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        </div>
-                                    )
-                                })
-                             )}
-                        </div>
-                    </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 border-t bg-muted/20 flex justify-between gap-2">
-              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                <Sparkles className="h-3 w-3" />
-                <span>AI will analyze your materials and preferences to generate a personalized course</span>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsCreating(false)}>Cancel</Button>
-                <Button onClick={handleCreateCourse} disabled={!newCourse.topic}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Course
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <GenerateCourseModal
+        isOpen={isCreating}
+        onClose={() => setIsCreating(false)}
+        onSuccess={(newPlan) => {
+          setStudyPlans([newPlan, ...studyPlans]);
+          router.push(`/courses/${newPlan.id}`);
+        }}
+        libraryMaterials={libraryMaterials}
+        userId={userId || ""}
+      />
     </div>
   );
 }

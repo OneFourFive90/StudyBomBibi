@@ -11,6 +11,7 @@ import { db } from "@/lib/firebase/firebase";
 import { useAuth } from "@/context/AuthContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { markdownComponents } from "@/components/markdown-renderers";
 
 // Types matching Enhanced Study Plan Assets Schema
 type VideoSegment = {
@@ -801,31 +802,9 @@ export default function CourseDetailPage() {
                             <div className="max-w-none">
                                {activity.content ? (
                                  <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/20 p-6 rounded-lg border">
-                                   <ReactMarkdown 
+                                   <ReactMarkdown
                                      remarkPlugins={[remarkGfm]}
-                                     components={{
-                                       h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-6 mb-4 first:mt-0" {...props} />,
-                                       h2: ({node, ...props}) => <h2 className="text-xl font-bold mt-5 mb-3" {...props} />,
-                                       h3: ({node, ...props}) => <h3 className="text-lg font-semibold mt-4 mb-3" {...props} />,
-                                       h4: ({node, ...props}) => <h4 className="text-base font-semibold mt-3 mb-2" {...props} />,
-                                       p: ({node, ...props}) => <p className="text-foreground leading-relaxed mb-4" {...props} />,
-                                       ul: ({node, ...props}) => <ul className="list-disc list-outside space-y-2 mb-4 ml-6" {...props} />,
-                                       ol: ({node, ...props}) => <ol className="list-decimal list-outside space-y-2 mb-4 ml-6" {...props} />,
-                                       li: ({node, ...props}) => <li className="text-foreground" {...props} />,
-                                       blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground my-4" {...props} />,
-                                       code: ({node, inline, ...props}) => 
-                                         inline ? (
-                                           <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props} />
-                                         ) : (
-                                           <code className="block bg-muted/50 p-4 rounded-lg overflow-x-auto mb-4 text-sm font-mono text-foreground" {...props} />
-                                         ),
-                                       table: ({node, ...props}) => <table className="border-collapse border border-muted w-full mb-4" {...props} />,
-                                       thead: ({node, ...props}) => <thead className="bg-muted/30" {...props} />,
-                                       th: ({node, ...props}) => <th className="border border-muted p-2 text-left font-semibold" {...props} />,
-                                       td: ({node, ...props}) => <td className="border border-muted p-2" {...props} />,
-                                       a: ({node, ...props}) => <a className="text-primary hover:underline" {...props} />,
-                                       hr: ({node, ...props}) => <hr className="my-6 border-muted" {...props} />,
-                                     }}
+                                     components={markdownComponents}
                                    >
                                      {activity.content}
                                    </ReactMarkdown>

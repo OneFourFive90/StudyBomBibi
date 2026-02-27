@@ -139,7 +139,7 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             planId: saveResult.planId,
-            userId: ownerId,
+            userId: userId,
           }),
         });
 

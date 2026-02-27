@@ -2,6 +2,27 @@ import { db } from "@/lib/firebase/firebase";
 import { doc, updateDoc, getDoc, Timestamp, collection, getDocs } from "firebase/firestore";
 
 /**
+ * Check if all activities in all daily modules are completed
+ */
+async function areAllActivitiesCompleted(planId: string): Promise<boolean> {
+  const modulesRef = collection(db, "plans", planId, "dailyModule");
+  const snapshot = await getDocs(modulesRef);
+  
+  for (const docSnap of snapshot.docs) {
+    const moduleData = docSnap.data();
+    const activities = moduleData.activities || [];
+    
+    for (const activity of activities) {
+      if (!activity.isCompleted) {
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
+/**
  * Calculate progress based on completed sections (same as frontend)
  * - For each module: 1 materials section + number of quiz activities
  * - Progress = (completed sections / total sections) * 100
@@ -127,9 +148,22 @@ export async function updateActivityCompletionStatus(
   // Calculate currentDay after writing to Firestore (uses fresh data)
   const newCurrentDay = await calculateCurrentDay(planId);
   
-  // Update currentDay
+  // Check if all activities are completed and update status accordingly
+  const allActivitiesCompleted = await areAllActivitiesCompleted(planId);
+  const planSnap = await getDoc(planRef);
+  const currentStatus = planSnap.data()?.status;
+  
+  let statusUpdate = {};
+  if (allActivitiesCompleted && currentStatus !== "completed") {
+    statusUpdate = { status: "completed" };
+  } else if (!allActivitiesCompleted && currentStatus === "completed") {
+    statusUpdate = { status: "active" };
+  }
+  
+  // Update currentDay and status if needed
   await updateDoc(planRef, {
     currentDay: newCurrentDay,
+    ...statusUpdate,
   });
 }
 
@@ -184,9 +218,22 @@ export async function bulkUpdateActivityCompletionStatus(
   // Calculate currentDay after writing to Firestore (uses fresh data)
   const newCurrentDay = await calculateCurrentDay(planId);
   
-  // Update currentDay
+  // Check if all activities are completed and update status accordingly
+  const allActivitiesCompleted = await areAllActivitiesCompleted(planId);
+  const planSnap = await getDoc(planRef);
+  const currentStatus = planSnap.data()?.status;
+  
+  let statusUpdate = {};
+  if (allActivitiesCompleted && currentStatus !== "completed") {
+    statusUpdate = { status: "completed" };
+  } else if (!allActivitiesCompleted && currentStatus === "completed") {
+    statusUpdate = { status: "active" };
+  }
+  
+  // Update currentDay and status if needed
   await updateDoc(planRef, {
     currentDay: newCurrentDay,
+    ...statusUpdate,
   });
 }
 
@@ -233,8 +280,21 @@ export async function completeAllActivitiesInModule(
   // Calculate currentDay after writing to Firestore (uses fresh data)
   const newCurrentDay = await calculateCurrentDay(planId);
   
-  // Update currentDay
+  // Check if all activities are completed and update status accordingly
+  const allActivitiesCompleted = await areAllActivitiesCompleted(planId);
+  const planSnap = await getDoc(planRef);
+  const currentStatus = planSnap.data()?.status;
+  
+  let statusUpdate = {};
+  if (allActivitiesCompleted && currentStatus !== "completed") {
+    statusUpdate = { status: "completed" };
+  } else if (!allActivitiesCompleted && currentStatus === "completed") {
+    statusUpdate = { status: "active" };
+  }
+  
+  // Update currentDay and status if needed
   await updateDoc(planRef, {
     currentDay: newCurrentDay,
+    ...statusUpdate,
   });
 }

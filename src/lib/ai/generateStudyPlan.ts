@@ -1,5 +1,87 @@
 import { reasoningModel } from "@/lib/gemini";
 import { AIStudyPlanResponse } from "@/lib/firebase/firestore/study-plan/saveStudyPlanToFirestore";
+import * as fs from "fs";
+import * as path from "path";
+
+/**
+ * Cleans JSON string by properly escaping control characters
+ * Uses character-by-character parsing to respect escape sequences
+ */
+function cleanJsonString(jsonStr: string): string {
+  // First, extract just the JSON object from the response
+  const firstBrace = jsonStr.indexOf("{");
+  if (firstBrace === -1) {
+    throw new Error("No JSON object found in response");
+  }
+
+  let braceCount = 0;
+  let endBrace = -1;
+  for (let i = firstBrace; i < jsonStr.length; i++) {
+    if (jsonStr[i] === "{") braceCount++;
+    if (jsonStr[i] === "}") {
+      braceCount--;
+      if (braceCount === 0) {
+        endBrace = i;
+        break;
+      }
+    }
+  }
+
+  if (endBrace === -1) {
+    throw new Error("Malformed JSON: unmatched braces");
+  }
+
+  // Extract just the JSON object
+  jsonStr = jsonStr.substring(firstBrace, endBrace + 1);
+
+  // Parse character by character, only escaping unescaped control chars in strings
+  let result = "";
+  let inString = false;
+  let i = 0;
+
+  while (i < jsonStr.length) {
+    const char = jsonStr[i];
+    const prevChar = i > 0 ? jsonStr[i - 1] : "";
+    
+    // Check if we're entering/exiting a string (not escaped)
+    if (char === '"' && prevChar !== "\\") {
+      inString = !inString;
+      result += char;
+      i++;
+      continue;
+    }
+
+    // If we're in a string, escape unescaped control characters
+    if (inString) {
+      switch (char) {
+        case "\n":
+          result += "\\n";
+          break;
+        case "\r":
+          result += "\\r";
+          break;
+        case "\t":
+          result += "\\t";
+          break;
+        case "\0":
+          result += "\\0";
+          break;
+        case "\\":
+          // Keep existing escapes
+          result += char;
+          break;
+        default:
+          result += char;
+      }
+    } else {
+      result += char;
+    }
+    
+    i++;
+  }
+
+  return result;
+}
 
 export interface GenerateStudyPlanInput {
   fileNames: string[];
@@ -136,16 +218,124 @@ export async function generateStudyPlan(
   });
 
   let responseText = result.response.text();
+  
+  // Save raw Gemini response for debugging
+  try {
+    const debugDir = path.join(process.cwd(), "debug", "gemini-responses");
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const fileName = `response-${timestamp}.json`;
+    const filePath = path.join(debugDir, fileName);
+    
+    fs.writeFileSync(filePath, JSON.stringify({
+      timestamp: new Date().toISOString(),
+      courseFiles: fileNames,
+      duration: `${days} days, ${hoursPerDay}h/day`,
+      formats: formats,
+      responseLength: responseText.length,
+      rawResponse: responseText,
+    }, null, 2));
+    
+    console.log(`[Gemini Response] Saved to: ${filePath}`);
+  } catch (saveError) {
+    console.warn("[Gemini Response] Could not save response to file:", saveError);
+  }
+  
+  // Log original response for debugging
+  console.log("[Gemini Response] Full Response Length:", responseText.length);
+  console.log("[Gemini Response] First 500 chars:", responseText.substring(0, 500));
+  
   responseText = responseText
     .replace(/```json/g, "")
     .replace(/```/g, "")
     .trim();
 
-  const parsed: AIStudyPlanResponse = JSON.parse(responseText);
+  // Clean up problematic control characters in JSON
+  // This handles cases where the AI generates unescaped newlines/tabs in string values
+  responseText = cleanJsonString(responseText);
+
+  let parsed: AIStudyPlanResponse;
+  
+  try {
+    parsed = JSON.parse(responseText);
+  } catch (parseError) {
+    // Enhanced error message with position info
+    const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+    console.error("[JSON Parse Error] Details:", errorMsg);
+    console.error("[JSON Parse Error] Response char count:", responseText.length);
+    console.error("[JSON Parse Error] Response last 500 chars:", responseText.substring(Math.max(0, responseText.length - 500)));
+    
+    // Save error response for debugging
+    try {
+      const debugDir = path.join(process.cwd(), "debug", "gemini-responses");
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `error-response-${timestamp}.json`;
+      const filePath = path.join(debugDir, fileName);
+      
+      fs.writeFileSync(filePath, JSON.stringify({
+        timestamp: new Date().toISOString(),
+        courseFiles: fileNames,
+        duration: `${days} days, ${hoursPerDay}h/day`,
+        formats: formats,
+        error: errorMsg,
+        cleanedResponseLength: responseText.length,
+        cleanedResponse: responseText,
+      }, null, 2));
+      
+      console.error(`[JSON Parse Error] Saved error details to: ${filePath}`);
+    } catch (saveError) {
+      console.warn("[JSON Parse Error] Could not save error response to file:", saveError);
+    }
+    
+    // Try to find the error position in the original response
+    const match = errorMsg.match(/position (\d+)/);
+    if (match) {
+      const pos = parseInt(match[1], 10);
+      const start = Math.max(0, pos - 200);
+      const end = Math.min(responseText.length, pos + 200);
+      console.error(`[JSON Parse Error] Context around position ${pos}:`, responseText.substring(start, end));
+    }
+    
+    throw new Error(`Failed to parse AI response as JSON: ${errorMsg}`);
+  }
 
   // Validate response structure
   if (!parsed.courseTitle || !parsed.schedule) {
     throw new Error("Invalid AI response: missing courseTitle or schedule");
+  }
+
+  // Save successfully parsed response
+  try {
+    const debugDir = path.join(process.cwd(), "debug", "gemini-responses");
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const fileName = `success-response-${timestamp}.json`;
+    const filePath = path.join(debugDir, fileName);
+    
+    fs.writeFileSync(filePath, JSON.stringify({
+      timestamp: new Date().toISOString(),
+      courseFiles: fileNames,
+      duration: `${days} days, ${hoursPerDay}h/day`,
+      formats: formats,
+      courseTitle: parsed.courseTitle,
+      scheduleLength: parsed.schedule.length,
+      totalActivities: parsed.schedule.reduce((sum, day) => sum + (day.activities?.length || 0), 0),
+      parsedResponse: parsed,
+    }, null, 2));
+    
+    console.log(`[Gemini Success] Saved parsed response to: ${filePath}`);
+  } catch (saveError) {
+    console.warn("[Gemini Success] Could not save parsed response to file:", saveError);
   }
 
   return parsed;
