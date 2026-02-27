@@ -2,10 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronLeft, Play, Clock, CheckCircle2, BookOpen, Loader2, RefreshCw, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronLeft, Clock, CheckCircle2, BookOpen, Play, PanelLeftClose, PanelLeftOpen, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
+import { useAuth } from "@/context/AuthContext";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Types matching Enhanced Study Plan Assets Schema
 type VideoSegment = {
@@ -41,7 +45,8 @@ type Activity = {
 };
 
 type DailyModule = {
-  day: number;
+  id: string;
+  order: number;
   title: string;
   activities: Activity[];
 };
@@ -60,171 +65,18 @@ type StudyPlan = {
   createdAt: string;
 };
 
-// --- MOCK DATA ---
-const MOCK_STUDY_PLANS: StudyPlan[] = [
-  {
-    id: "c1",
-    title: "Introduction to Biology & The Cell",
-    description: "AI-generated course uncovering the foundational principles of life.",
-    progress: 45,
-    totalHours: 20,
-    format: "Video",
-    materials: ["1", "3"],
-    ownerId: "user123",
-    courseTitle: "Introduction to Biology & The Cell",
-    createdAt: "2026-02-26T10:00:00Z",
-    schedule: [
-      {
-        day: 1,
-        title: "Day 1: Unveiling Biology - The Study of Life",
-        activities: [
-          {
-            type: "video",
-            time_minutes: 45,
-            title: "Introduction to Biology: What is Life?",
-            assetStatus: "ready",
-            video_segments: [
-              {
-                slide_title: "Welcome to Biology!",
-                bullets: ["The scientific study of living organisms.", "Explores the diversity, complexity, and interconnectedness of life.", "Answers fundamental questions about our existence and the natural world."],
-                script: "Hello future biologists! Welcome to your journey..."
-              },
-              {
-                slide_title: "Defining Life: More Than Just Being There",
-                bullets: ["What truly distinguishes living organisms from non-living matter?", "Life is defined by a unique set of shared characteristics.", "Understanding these helps us classify, appreciate, and conserve life."],
-                script: "But what exactly constitutes a 'living organism'?"
-              }
-            ]
-          },
-          {
-            type: "image",
-            time_minutes: 5,
-            title: "Microscopic View of a Cell",
-            assetStatus: "ready",
-            image_description: "A high-resolution image showing the internal structure of a eukaryotic cell, including the nucleus, mitochondria, and other organelles."
-          },
-          {
-            type: "text",
-            time_minutes: 45,
-            title: "The Seven Characteristics of Life Explained",
-            assetStatus: "ready",
-            content: "To truly understand 'living organisms', as defined by biology, it's essential to grasp the fundamental characteristics..."
-          },
-          {
-            type: "video",
-            time_minutes: 20,
-            title: "Major Themes in Biology: A Glimpse",
-            assetStatus: "ready",
-            video_segments: [
-              {
-                slide_title: "Biology's Vast Landscape: Key Topics",
-                bullets: ["Cells: The fundamental building blocks of all life.", "Genetics..."],
-                script: "Biology is an incredibly broad science..."
-              }
-            ]
-          },
-          {
-            type: "quiz",
-            time_minutes: 10,
-            title: "Day 1 Quiz: Introduction to Biology",
-            assetStatus: "ready",
-            quiz_check: [
-              {
-                question: "Which of the following is NOT typically considered a characteristic of all living organisms?",
-                options: ["Growth and Development", "Ability to fly", "Reproduction", "Response to the Environment"],
-                answer: "Ability to fly"
-              },
-              {
-                question: "The process by which living organisms maintain a stable internal environment despite external changes is called:",
-                options: ["Metabolism", "Evolution", "Homeostasis", "Reproduction"],
-                answer: "Homeostasis"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        day: 2,
-        title: "Day 2: The Cell - Life's Fundamental Unit",
-        activities: [
-          {
-            type: "video",
-            time_minutes: 25,
-            title: "The Cell: Unveiling Life's Fundamental Unit",
-            assetStatus: "ready"
-          },
-          {
-            type: "text",
-            time_minutes: 25,
-            title: "Exploring the 'Basic Unit': Prokaryotic vs. Eukaryotic Cells",
-            assetStatus: "ready"
-          },
-          {
-            type: "image",
-            time_minutes: 10,
-            title: "Anatomy of a Eukaryotic Animal Cell",
-            assetStatus: "generating"
-          },
-          {
-            type: "quiz",
-            time_minutes: 10,
-            title: "Day 2 Quiz: The Cell and Its Structures",
-            assetStatus: "ready",
-            quiz_check: [
-              {
-                question: "Which organelle is known as the powerhouse of the cell?",
-                options: ["Nucleus", "Mitochondria", "Ribosome", "Chloroplast"],
-                answer: "Mitochondria"
-              },
-              {
-                question: "What is the main difference between prokaryotic and eukaryotic cells?",
-                options: ["Presence of a nucleus", "Cell wall", "DNA", "Ribosomes"],
-                answer: "Presence of a nucleus"
-              }
-            ]
-          },
-          {
-            type: "quiz",
-            time_minutes: 8,
-            title: "Day 2 Quiz: Cell Membranes and Transport",
-            assetStatus: "ready",
-            quiz_check: [
-              {
-                question: "Which process moves water across a semipermeable membrane?",
-                options: ["Osmosis", "Diffusion", "Active transport", "Facilitated diffusion"],
-                answer: "Osmosis"
-              },
-              {
-                question: "Which part of the cell membrane is hydrophobic?",
-                options: ["Phosphate head", "Fatty acid tail", "Protein channel", "Carbohydrate chain"],
-                answer: "Fatty acid tail"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "c2",
-    title: "Advanced Mathematics",
-    description: "Personalized mathematics course tailored to your learning style and materials.",
-    progress: 12,
-    totalHours: 35,
-    format: "Text",
-    materials: ["2"],
-    ownerId: "user123",
-    courseTitle: "Advanced Mathematics",
-    createdAt: "2026-02-25T14:00:00Z",
-    schedule: []
-  },
-];
-
-
 export default function CourseDetailPage() {
   const params = useParams();
   const courseId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const studyPlan = MOCK_STUDY_PLANS.find((plan) => plan.id === courseId) ?? null;
+  const { userId } = useAuth();
+
+  // State for Firestore data
+  const [studyPlan, setStudyPlan] = useState<StudyPlan | null>(null);
+  const [dailyModules, setDailyModules] = useState<DailyModule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [assetUrls, setAssetUrls] = useState<Record<string, string>>({});
+
+  // UI state
   const [activeModuleDay, setActiveModuleDay] = useState<number | null>(null);
   const [activeQuizIndex, setActiveQuizIndex] = useState<number | null>(null); // Index of the active quiz within the module
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -237,6 +89,84 @@ export default function CourseDetailPage() {
   // Quiz summary state
   const [quizSubmitted, setQuizSubmitted] = useState(false);
 
+  // Fetch study plan document
+  useEffect(() => {
+    const fetchPlan = async () => {
+      if (!userId || !courseId) return;
+      try {
+        const planRef = doc(db, 'plans', courseId as string);
+        const planSnapshot = await getDoc(planRef);
+        
+        if (planSnapshot.exists()) {
+          const planData = planSnapshot.data();
+          setStudyPlan({
+            id: planSnapshot.id,
+            title: planData.courseTitle,
+            description: planData.description || "",
+            progress: planData.progress || 0,
+            totalHours: planData.hoursPerDay * planData.totalDays || 0,
+            format: planData.format || "Video",
+            materials: planData.materials || [],
+            schedule: [],
+            ownerId: planData.ownerId,
+            courseTitle: planData.courseTitle,
+            createdAt: planData.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+          } as StudyPlan);
+        }
+      } catch (error) {
+        console.error('Error fetching plan:', error);
+      }
+    };
+
+    fetchPlan();
+  }, [courseId, userId]);
+
+  // Fetch daily modules and assets
+  useEffect(() => {
+    if (!studyPlan || !courseId) return;
+
+    const fetchModules = async () => {
+      setLoading(true);
+      try {
+        // Get daily modules from subcollection
+        const modulesRef = collection(db, 'plans', courseId as string, 'dailyModule');
+        const snapshot = await getDocs(modulesRef);
+        const modules = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            order: data.order || 0,
+            title: data.title || '',
+            activities: data.activities || [],
+          };
+        }) as DailyModule[];
+        
+        setDailyModules(modules.sort((a, b) => a.order - b.order));
+
+        // Fetch asset URLs from Firestore
+        const assetsRef = collection(db, 'studyplanAIAssets');
+        const q = query(assetsRef, where('planId', '==', courseId));
+        const assetsSnapshot = await getDocs(q);
+        
+        const urls: Record<string, string> = {};
+        assetsSnapshot.docs.forEach(doc => {
+          const asset = doc.data();
+          if (asset.downloadUrl) {
+            urls[doc.id] = asset.downloadUrl;
+          }
+        });
+        
+        setAssetUrls(urls);
+      } catch (error) {
+        console.error('Error fetching modules:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchModules();
+  }, [studyPlan, courseId]);
+
   // Reset quiz state when changing quiz or module
   useEffect(() => {
     setQuizStarted(false);
@@ -248,22 +178,24 @@ export default function CourseDetailPage() {
   if (!studyPlan) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
-        <h2 className="text-xl font-semibold">Course Not Found</h2>
-        <p className="text-muted-foreground">The course you are looking for does not exist.</p>
-        <Link href="/courses">
-          <Button>Return to Learning Hub</Button>
-        </Link>
+        <h2 className="text-xl font-semibold">{loading ? "Loading Course..." : "Course Not Found"}</h2>
+        <p className="text-muted-foreground">{loading ? "Please wait while we fetch your course." : "The course you are looking for does not exist."}</p>
+        {!loading && (
+          <Link href="/courses">
+            <Button>Return to Learning Hub</Button>
+          </Link>
+        )}
       </div>
     );
   }
 
   // Set active module on first load
-  if (activeModuleDay === null && studyPlan.schedule.length > 0) {
-    setActiveModuleDay(studyPlan.schedule[0].day);
+  if (activeModuleDay === null && dailyModules.length > 0) {
+    setActiveModuleDay(dailyModules[0].order);
     setActiveQuizIndex(null); // Show module content by default
   }
 
-  const currentModule = studyPlan.schedule.find(m => m.day === activeModuleDay);
+  const currentModule = dailyModules.find(m => m.order === activeModuleDay);
   const quizActivities = currentModule?.activities.map((a, i) => ({ ...a, originalIndex: i })).filter(a => a.type === "quiz") || [];
   const contentActivities = currentModule?.activities.filter(a => a.type !== "quiz") || [];
 
@@ -293,7 +225,7 @@ export default function CourseDetailPage() {
   };
 
   // Each quiz is a section, and materials are one section per day
-  const totalActivities = studyPlan.schedule.reduce((acc, mod) => {
+  const totalActivities = dailyModules.reduce((acc, mod) => {
     const quizCount = mod.activities.filter(a => a.type === "quiz").length;
     return acc + 1 + quizCount; // 1 for materials, rest for quizzes
   }, 0);
@@ -316,10 +248,10 @@ export default function CourseDetailPage() {
     }
 
     // 3. Move to the next module's materials
-    const currentModuleIdx = studyPlan.schedule.findIndex(m => m.day === activeModuleDay);
-    if (currentModuleIdx < studyPlan.schedule.length - 1) {
-      const nextModule = studyPlan.schedule[currentModuleIdx + 1];
-      setActiveModuleDay(nextModule.day);
+    const currentModuleIdx = dailyModules.findIndex(m => m.order === activeModuleDay);
+    if (currentModuleIdx < dailyModules.length - 1) {
+      const nextModule = dailyModules[currentModuleIdx + 1];
+      setActiveModuleDay(nextModule.order);
       setActiveQuizIndex(null);
     }
   };
@@ -338,29 +270,18 @@ export default function CourseDetailPage() {
     }
 
     // 2. If we are in materials, go to the last quiz of the previous module
-    const currentModuleIdx = studyPlan.schedule.findIndex(m => m.day === activeModuleDay);
+    const currentModuleIdx = dailyModules.findIndex(m => m.order === activeModuleDay);
     if (currentModuleIdx > 0) {
-      const prevModule = studyPlan.schedule[currentModuleIdx - 1];
+      const prevModule = dailyModules[currentModuleIdx - 1];
       const prevQuizActivities = prevModule.activities.filter(a => a.type === "quiz");
       
-      setActiveModuleDay(prevModule.day);
+      setActiveModuleDay(prevModule.order);
       if (prevQuizActivities.length > 0) {
         setActiveQuizIndex(prevQuizActivities.length - 1);
       } else {
         setActiveQuizIndex(null);
       }
     }
-  };
-
-  // Content type badges
-  const getContentTypeBadge = (type: string) => {
-    const badges: Record<string, { bg: string; text: string }> = {
-      video: { bg: "bg-blue-500/10", text: "text-blue-600" },
-      text: { bg: "bg-green-500/10", text: "text-green-600" },
-      image: { bg: "bg-purple-500/10", text: "text-purple-600" },
-      quiz: { bg: "bg-primary/10", text: "text-primary" }
-    };
-    return badges[type] || badges.text;
   };
 
   return (
@@ -391,7 +312,7 @@ export default function CourseDetailPage() {
           <div className="p-4 border-b bg-muted/30 flex justify-between items-start">
             <div>
               <h3 className="font-semibold text-sm">Course Content</h3>
-              <p className="text-xs text-muted-foreground mt-1">{studyPlan.schedule.length} days</p>
+              <p className="text-xs text-muted-foreground mt-1">{dailyModules.length} days</p>
             </div>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setIsSidebarOpen(false)}>
               <PanelLeftClose className="h-4 w-4" />
@@ -399,28 +320,25 @@ export default function CourseDetailPage() {
           </div>
 
           <div className="overflow-y-auto flex-1">
-            {studyPlan.schedule.length === 0 ? (
+            {dailyModules.length === 0 ? (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm p-4">
                 No modules available yet
               </div>
             ) : (
               <div className="space-y-2 p-3">
-                {studyPlan.schedule.map((module, idx) => {
-                  const isActive = activeModuleDay === module.day;
+                {dailyModules.map((module) => {
+                  const isActive = activeModuleDay === module.order;
                   const moduleQuizzes = module.activities.map((a, i) => ({ ...a, originalIndex: i })).filter(a => a.type === "quiz");
                   
                   // Section completion logic
-                  const isMaterialsCompleted = completedSections.has(getSectionKey(module.day, "materials"));
-                  const completedQuizzesCount = moduleQuizzes.filter(q => completedSections.has(getSectionKey(module.day, "quiz", q.originalIndex))).length;
-                  const totalSections = 1 + moduleQuizzes.length; // Materials + Quizzes
-                  const completedSectionsCount = (isMaterialsCompleted ? 1 : 0) + completedQuizzesCount;
+                  const isMaterialsCompleted = completedSections.has(getSectionKey(module.order, "materials"));
 
                   return (
-                    <div key={module.day} className="mb-6">
+                    <div key={module.order} className="mb-6">
                       {/* Module Header */}
                       <div className="mb-2">
                         <div className="font-medium text-xs uppercase tracking-wider  px-2 py-1">
-                          {module.title}
+                          Day {module.order}: {module.title}
                         </div>
                       </div>
                       
@@ -428,7 +346,7 @@ export default function CourseDetailPage() {
                       <div className="ml-2 space-y-1">
                         <button
                           onClick={() => {
-                            setActiveModuleDay(module.day);
+                            setActiveModuleDay(module.order);
                             setActiveQuizIndex(null);
                           }}
                           className={`w-full text-left p-2 text-xs rounded transition-colors flex items-center gap-2 ${
@@ -452,13 +370,13 @@ export default function CourseDetailPage() {
                       {moduleQuizzes.length > 0 && (
                         <div className="ml-2 space-y-1">
                           {moduleQuizzes.map((quiz, qIdx) => {
-                            const isQuizCompleted = completedSections.has(getSectionKey(module.day, "quiz", quiz.originalIndex));
+                            const isQuizCompleted = completedSections.has(getSectionKey(module.order, "quiz", quiz.originalIndex));
                             const isQuizActive = activeQuizIndex === quiz.originalIndex && isActive;
                             return (
                               <button
                                 key={qIdx}
                                 onClick={() => {
-                                  setActiveModuleDay(module.day);
+                                  setActiveModuleDay(module.order);
                                   setActiveQuizIndex(quiz.originalIndex);
                                 }}
                                 className={`w-full text-left p-2 text-xs rounded transition-colors flex items-center gap-2 ${
@@ -747,9 +665,25 @@ export default function CourseDetailPage() {
                             <div className="space-y-4">
                               {activity.video_segments && activity.video_segments.length > 0 ? (
                                 <div className="grid md:grid-cols-2 gap-6">
-                                  <div className="aspect-video bg-black rounded-lg flex items-center justify-center group cursor-pointer hover:bg-black/90 transition-colors shadow-lg">
-                                    <Play className="h-16 w-16 text-white opacity-80 group-hover:opacity-100 transition-opacity" />
-                                  </div>
+                                  {(() => {
+                                    // Find the first slide image asset
+                                    const slideAsset = activity.assets?.find(a => a.type === 'slide_image' && a.segmentIndex === 0);
+                                    const slideUrl = slideAsset ? assetUrls[slideAsset.assetId] : null;
+                                    
+                                    return (
+                                      <div className="aspect-video bg-black rounded-lg flex items-center justify-center group cursor-pointer hover:bg-black/90 transition-colors shadow-lg overflow-hidden">
+                                        {slideUrl ? (
+                                          <img
+                                            src={slideUrl}
+                                            alt="First slide"
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <Play className="h-16 w-16 text-white opacity-80 group-hover:opacity-100 transition-opacity" />
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                                     <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Key Concepts</h4>
                                     <div className="space-y-3">
@@ -762,7 +696,7 @@ export default function CourseDetailPage() {
                                              ))}
                                           </ul>
                                           <p className="text-muted-foreground text-xs leading-relaxed italic border-l-2 pl-2">
-                                            "{segment.script.substring(0, 100)}..."
+                                            &quot;{segment.script.substring(0, 100)}&quot;...
                                           </p>
                                         </div>
                                       ))}
@@ -772,7 +706,7 @@ export default function CourseDetailPage() {
                               ) : (
                                 <div className="w-full h-48 bg-muted/30 rounded-lg flex flex-col items-center justify-center border-2 border-dashed">
                                    <Loader2 className="h-8 w-8 text-primary animate-spin mb-2" />
-                                   <p className="text-sm font-medium">Waiting for AI to generate...</p>
+                                   <p className="text-sm font-medium">Video content is being generated...</p>
                                 </div>
                               )}
                             </div>
@@ -780,20 +714,47 @@ export default function CourseDetailPage() {
 
                           {/* Text/Reading Content */}
                           {activity.type === "text" && (
-                            <div className="prose prose-sm max-w-none bg-muted/20 p-6 rounded-lg border">
+                            <div className="max-w-none">
                                {activity.content ? (
-                                 <div className="text-foreground leading-relaxed whitespace-pre-wrap">
-                                   {activity.content}
+                                 <div className="prose prose-sm dark:prose-invert max-w-none bg-muted/20 p-6 rounded-lg border">
+                                   <ReactMarkdown 
+                                     remarkPlugins={[remarkGfm]}
+                                     components={{
+                                       h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-6 mb-4 first:mt-0" {...props} />,
+                                       h2: ({node, ...props}) => <h2 className="text-xl font-bold mt-5 mb-3" {...props} />,
+                                       h3: ({node, ...props}) => <h3 className="text-lg font-semibold mt-4 mb-3" {...props} />,
+                                       h4: ({node, ...props}) => <h4 className="text-base font-semibold mt-3 mb-2" {...props} />,
+                                       p: ({node, ...props}) => <p className="text-foreground leading-relaxed mb-4" {...props} />,
+                                       ul: ({node, ...props}) => <ul className="list-disc list-outside space-y-2 mb-4 ml-6" {...props} />,
+                                       ol: ({node, ...props}) => <ol className="list-decimal list-outside space-y-2 mb-4 ml-6" {...props} />,
+                                       li: ({node, ...props}) => <li className="text-foreground" {...props} />,
+                                       blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground my-4" {...props} />,
+                                       code: ({node, inline, ...props}) => 
+                                         inline ? (
+                                           <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props} />
+                                         ) : (
+                                           <code className="block bg-muted/50 p-4 rounded-lg overflow-x-auto mb-4 text-sm font-mono text-foreground" {...props} />
+                                         ),
+                                       table: ({node, ...props}) => <table className="border-collapse border border-muted w-full mb-4" {...props} />,
+                                       thead: ({node, ...props}) => <thead className="bg-muted/30" {...props} />,
+                                       th: ({node, ...props}) => <th className="border border-muted p-2 text-left font-semibold" {...props} />,
+                                       td: ({node, ...props}) => <td className="border border-muted p-2" {...props} />,
+                                       a: ({node, ...props}) => <a className="text-primary hover:underline" {...props} />,
+                                       hr: ({node, ...props}) => <hr className="my-6 border-muted" {...props} />,
+                                     }}
+                                   >
+                                     {activity.content}
+                                   </ReactMarkdown>
                                  </div>
                                ) : (
-                                 <>
+                                 <div className="bg-muted/20 p-6 rounded-lg border">
                                    <p className="text-muted-foreground italic">
                                      [Generated Reading Material For: {activity.title}]
                                    </p>
-                                   <p className="mt-4">
+                                   <p className="mt-4 text-foreground">
                                      Detailed conceptual explanations, definitions, and examples would appear here matching the backend content generation.
                                    </p>
-                                 </>
+                                 </div>
                                )}
                             </div>
                           )}
@@ -801,18 +762,28 @@ export default function CourseDetailPage() {
                           {/* Image Content */}
                           {activity.type === "image" && (
                             <div className="flex flex-col items-center p-6 bg-muted/20 rounded-lg border">
-                               {activity.image_description ? ( 
-                                 <>
-                                   <div className="w-full max-w-md aspect-video bg-muted rounded shadow-sm mb-4 flex items-center justify-center">
-                                      <span className="text-muted-foreground">Image Asset</span>
+                               {(() => {
+                                 const imageAsset = activity.assets?.find(a => a.type === 'single_image');
+                                 const imageUrl = imageAsset ? assetUrls[imageAsset.assetId] : null;
+                                 
+                                 return imageUrl ? (
+                                   <>
+                                     <img
+                                       src={imageUrl}
+                                       alt={activity.title}
+                                       className="w-full max-w-2xl rounded shadow-md mb-4 object-cover"
+                                     />
+                                     {activity.image_description && (
+                                       <p className="text-sm text-center text-muted-foreground max-w-lg">{activity.image_description}</p>
+                                     )}
+                                   </>
+                                 ) : (
+                                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                     <p className="text-sm font-medium">Image is being generated...</p>
                                    </div>
-                                   <p className="text-sm text-center text-muted-foreground max-w-lg">{activity.image_description}</p>
-                                 </>
-                               ) : (
-                                  <div className="flex items-center gap-2 text-muted-foreground">
-                                     <Loader2 className="h-4 w-4 animate-spin" /> Waiting for AI to generate...
-                                  </div>
-                               )}
+                                 );
+                               })()}
                             </div>
                           )}
                        </div>
@@ -824,7 +795,7 @@ export default function CourseDetailPage() {
                     <Button 
                       variant="outline" 
                       onClick={goToPreviousSection}
-                      disabled={activeModuleDay === studyPlan.schedule[0].day && activeQuizIndex === null}
+                      disabled={activeModuleDay === dailyModules[0]?.order && activeQuizIndex === null}
                       className="w-full sm:w-auto"
                     >
                       <ChevronLeft className="h-4 w-4 mr-2" />
@@ -835,16 +806,16 @@ export default function CourseDetailPage() {
                       onClick={handleToggleSectionComplete}
                       variant={(() => {
                         if (activeQuizIndex === null) {
-                          return completedSections.has(getSectionKey(currentModule.day, "materials")) ? "secondary" : "default";
+                          return completedSections.has(getSectionKey(currentModule.order, "materials")) ? "secondary" : "default";
                         } else {
-                          return completedSections.has(getSectionKey(currentModule.day, "quiz", activeQuizIndex)) ? "secondary" : "default";
+                          return completedSections.has(getSectionKey(currentModule.order, "quiz", activeQuizIndex)) ? "secondary" : "default";
                         }
                       })()}
                       className="w-full sm:w-auto"
                     >
                       {(() => {
                         if (activeQuizIndex === null) {
-                          return completedSections.has(getSectionKey(currentModule.day, "materials")) ? (
+                          return completedSections.has(getSectionKey(currentModule.order, "materials")) ? (
                             <>
                               <CheckCircle2 className="h-4 w-4 mr-2" />
                               Completed
@@ -853,7 +824,7 @@ export default function CourseDetailPage() {
                             "Mark as Completed"
                           );
                         } else {
-                          return completedSections.has(getSectionKey(currentModule.day, "quiz", activeQuizIndex)) ? (
+                          return completedSections.has(getSectionKey(currentModule.order, "quiz", activeQuizIndex)) ? (
                             <>
                               <CheckCircle2 className="h-4 w-4 mr-2" />
                               Completed
@@ -868,7 +839,7 @@ export default function CourseDetailPage() {
                     <Button 
                       onClick={goToNextSection}
                       disabled={
-                        activeModuleDay === studyPlan.schedule[studyPlan.schedule.length - 1].day && 
+                        activeModuleDay === dailyModules[dailyModules.length - 1]?.order && 
                         (activeQuizIndex === null ? quizActivities.length === 0 : activeQuizIndex === quizActivities.length - 1)
                       }
                       className="w-full sm:w-auto"

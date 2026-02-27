@@ -1,16 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { 
-  PlayCircle, 
   Clock, 
-  Plus, 
   X, 
   Folder, 
   FileText, 
@@ -18,43 +15,29 @@ import {
   Sparkles,
   ChevronRight,
   ChevronLeft,
-  Search
+  ChevronDown,
+  ChevronUp,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import Link from "next/link";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase/firebase";
+import { useAuth } from "@/context/AuthContext";
 
 // Types
-type Lesson = {
+type StudyPlan = {
   id: string;
-  title: string;
-  duration: number; // minutes
-  completed: boolean;
-  contentType: "video" | "text" | "document" | "quiz";
-};
-
-type Module = {
-  id: string;
-  title: string;
-  lessons: Lesson[];
-};
-
-type Course = {
-  id: string;
-  title: string;
+  courseTitle: string;
   description: string;
-  instructor: string;
-  rating: number;
-  students: number;
-  progress: number;
-  totalHours: number;
+  totalDays: number;
+  currentDay: number;
+  hoursPerDay: number;
+  status: string;
   format: "Text" | "Image" | "Video";
-  materials: string[];
-  customPrompt?: string;
-  preferences: {
-    difficulty: "Beginner" | "Intermediate" | "Advanced";
-    pace: "Slow" | "Normal" | "Fast";
-    focusAreas: string[];
-  };
-  modules: Module[];
+  createdAt: Date;
+  updatedAt: Date;
+  ownerId: string;
 };
 
 type Material = {
@@ -77,75 +60,15 @@ const mockLibraryMaterials: Material[] = [
 ];
 
 export default function AICoursePage() {
-  // --- State ---
-  const [courses, setCourses] = useState<Course[]>([
-    {
-      id: "c1",
-      title: "Introduction to Computer Science",
-      description: "AI-generated personalized course covering CS fundamentals based on your selected materials.",
-      instructor: "AI Assistant",
-      rating: 4.8,
-      students: 1240,
-      progress: 45,
-      totalHours: 20,
-      format: "Video",
-      materials: ["1", "3"],
-      customPrompt: "Focus on practical applications and real-world examples",
-      preferences: {
-        difficulty: "Beginner",
-        pace: "Normal",
-        focusAreas: ["Algorithms", "Data Structures"]
-      },
-      modules: [
-        {
-          id: "m1",
-          title: "Fundamentals",
-          lessons: [
-            { id: "l1", title: "What is Computer Science?", duration: 15, completed: true, contentType: "video" },
-            { id: "l2", title: "Basic Concepts & History", duration: 45, completed: true, contentType: "video" }
-          ]
-        }
-      ]
-    },
-    {
-      id: "c2",
-      title: "Advanced Mathematics",
-      description: "Personalized mathematics course tailored to your learning style and materials.",
-      instructor: "AI Assistant",
-      rating: 4.9,
-      students: 856,
-      progress: 12,
-      totalHours: 35,
-      format: "Text",
-      materials: ["2"],
-      preferences: {
-        difficulty: "Advanced",
-        pace: "Fast",
-        focusAreas: ["Calculus", "Linear Algebra"]
-      },
-      modules: []
-    },
-    {
-      id: "c3",
-      title: "Physics for Engineers",
-      description: "Interactive physics course generated from your engineering textbooks and notes.",
-      instructor: "AI Assistant",
-      rating: 4.7,
-      students: 2100,
-      progress: 78,
-      totalHours: 25,
-      format: "Image",
-      materials: ["4", "5"],
-      preferences: {
-        difficulty: "Intermediate",
-        pace: "Normal",
-        focusAreas: ["Mechanics", "Thermodynamics"]
-      },
-      modules: []
-    },
-  ]);
+  const { userId } = useAuth();
 
+  // --- State ---
+  const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [sortBy, setSortBy] = useState<'createdAt' | 'lastAccessedAt' | 'name'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
   
   // Material Selection State
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -171,43 +94,75 @@ export default function AICoursePage() {
     selectedMaterials: [],
   });
 
-  // --- Handlers ---
-
-  const handleCreateCourse = () => {
-    // Generate a new course object
-    const createdCourse: Course = {
-      id: `c${courses.length + 1}`,
-      title: newCourse.topic || "Untitled Course",
-      description: `AI-generated personalized course for ${newCourse.topic}${newCourse.customPrompt ? ` - ${newCourse.customPrompt}` : ''}`,
-      instructor: "AI Assistant",
-      rating: 0,
-      students: 0,
-      progress: 0,
-      totalHours: parseInt(newCourse.availability) || 10,
-      format: newCourse.format,
-      materials: newCourse.selectedMaterials,
-      customPrompt: newCourse.customPrompt,
-      preferences: {
-        difficulty: newCourse.difficulty,
-        pace: newCourse.pace,
-        focusAreas: newCourse.focusAreas.split(',').map(s => s.trim()).filter(Boolean)
-      },
-      modules: []
+  // Fetch study plans for the current user
+  useEffect(() => {
+    const fetchPlans = async () => {
+      if (!userId) return;
+      
+      try {
+        const plansRef = collection(db, 'plans');
+        const q = query(plansRef, where('ownerId', '==', userId));
+        const snapshot = await getDocs(q);
+        const plans = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate(),
+            updatedAt: data.updatedAt?.toDate(),
+          } as StudyPlan;
+        });
+        
+        setStudyPlans(plans);
+      } catch (error) {
+        console.error('Error fetching plans:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    setCourses([createdCourse, ...courses]);
-    setIsCreating(false);
-    // Reset form
-    setNewCourse({
-      topic: "",
-      customPrompt: "",
-      availability: "",
-      format: "Text",
-      difficulty: "Beginner",
-      pace: "Normal",
-      focusAreas: "",
-      selectedMaterials: [],
-    });
+    fetchPlans();
+  }, [userId]);
+
+  // --- Handlers ---
+
+  const handleCreateCourse = async () => {
+    if (!userId) return;
+    
+    try {
+      // TODO: Call backend API to create the study plan
+      // For now, just add to local state and close the modal
+      const now = new Date();
+      const createdPlan: StudyPlan = {
+        id: `plan_${Date.now()}`,
+        courseTitle: newCourse.topic || "Untitled Course",
+        description: `AI-generated personalized course${newCourse.customPrompt ? ` - ${newCourse.customPrompt}` : ''}`,
+        totalDays: 7,
+        currentDay: 1,
+        hoursPerDay: parseInt(newCourse.availability) || 10,
+        status: "generating",
+        format: newCourse.format,
+        createdAt: now,
+        updatedAt: now,
+        ownerId: userId,
+      };
+
+      setStudyPlans([createdPlan, ...studyPlans]);
+      setIsCreating(false);
+      // Reset form
+      setNewCourse({
+        topic: "",
+        customPrompt: "",
+        availability: "",
+        format: "Text",
+        difficulty: "Beginner",
+        pace: "Normal",
+        focusAreas: "",
+        selectedMaterials: [],
+      });
+    } catch (error) {
+      console.error('Error creating course:', error);
+    }
   };
 
   const toggleMaterialSelection = (id: string) => {
@@ -219,6 +174,45 @@ export default function AICoursePage() {
         return { ...prev, selectedMaterials: [...prev.selectedMaterials, id] };
       }
     });
+  };
+
+  const getSortedPlans = () => {
+    const sorted = [...studyPlans];
+    
+    if (sortBy === 'createdAt') {
+      if (sortOrder === 'desc') {
+        sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      } else {
+        sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      }
+    } else if (sortBy === 'lastAccessedAt') {
+      if (sortOrder === 'desc') {
+        sorted.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      } else {
+        sorted.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      }
+    } else if (sortBy === 'name') {
+      if (sortOrder === 'desc') {
+        sorted.sort((a, b) => b.courseTitle.localeCompare(a.courseTitle));
+      } else {
+        sorted.sort((a, b) => a.courseTitle.localeCompare(b.courseTitle));
+      }
+    }
+    
+    return sorted;
+  };
+
+  const getSortLabel = () => {
+    switch (sortBy) {
+      case 'createdAt':
+        return 'Time Created';
+      case 'lastAccessedAt':
+        return 'Last Access';
+      case 'name':
+        return 'Name';
+      default:
+        return 'Sort';
+    }
   };
 
   return (
@@ -236,79 +230,154 @@ export default function AICoursePage() {
         </Button>
       </div>
 
+      {/* Sort Controls */}
+      {studyPlans.length > 0 && (
+        <div className="flex items-center gap-2 relative">
+          <div className="flex items-center gap-2 border rounded-md bg-background">
+            <div className="relative">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                className="gap-2"
+              >
+                {getSortLabel()}
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+              
+              {showSortDropdown && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-background border rounded-md shadow-lg z-50">
+                  <button 
+                    onClick={() => {
+                      setSortBy('createdAt');
+                      setShowSortDropdown(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
+                      sortBy === 'createdAt' ? 'bg-primary/10 text-primary font-semibold' : ''
+                    }`}
+                  >
+                    Time Created
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSortBy('lastAccessedAt');
+                      setShowSortDropdown(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
+                      sortBy === 'lastAccessedAt' ? 'bg-primary/10 text-primary font-semibold' : ''
+                    }`}
+                  >
+                    Last Access
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSortBy('name');
+                      setShowSortDropdown(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
+                      sortBy === 'name' ? 'bg-primary/10 text-primary font-semibold' : ''
+                    }`}
+                  >
+                    Name
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="border-l h-6" />
+            
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+              className="gap-1"
+            >
+              {sortOrder === 'asc' ? (
+                <ArrowUp className="h-4 w-4" />
+              ) : (
+                <ArrowDown className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Courses Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {courses.map((course) => {
-          const completedLessons = course.modules.reduce((acc, mod) => acc + mod.lessons.filter(l => l.completed).length, 0);
-          const totalLessons = course.modules.reduce((acc, mod) => acc + mod.lessons.length, 0);
-          
-          return (
-            <Card key={course.id} className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ 
-              borderLeftColor: course.format === 'Video' ? '#3b82f6' : course.format === 'Image' ? '#10b981' : '#f59e0b' 
-            }}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <CardTitle className="text-xl">{course.title}</CardTitle>
-                  <div className="flex flex-col gap-1 items-end">
-                    <div className="bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full uppercase font-semibold">
-                      {course.format}
+        {loading ? (
+          <div className="col-span-full flex items-center justify-center py-12">
+            <p className="text-muted-foreground">Loading your courses...</p>
+          </div>
+        ) : studyPlans.length === 0 ? (
+          <div className="col-span-full flex items-center justify-center py-12">
+            <p className="text-muted-foreground">No courses yet. Create your first AI course!</p>
+          </div>
+        ) : (
+          getSortedPlans().map((plan) => {
+            const progress = Math.round((plan.currentDay / plan.totalDays) * 100);
+            
+            return (
+              <Link href={`/courses/${plan.id}`} key={plan.id} className="block">
+                <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ 
+                  borderLeftColor: plan.format === 'Video' ? '#3b82f6' : plan.format === 'Image' ? '#10b981' : '#f59e0b' 
+                }}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <CardTitle className="text-xl">{plan.courseTitle}</CardTitle>
+                      <div className="flex flex-col gap-1 items-end">
+                        <div className={`text-xs px-2 py-1 rounded-full ${
+                          plan.status === 'generating' 
+                            ? 'bg-yellow-500/10 text-yellow-700'
+                            : plan.status === 'ready'
+                            ? 'bg-green-500/10 text-green-700'
+                            : 'bg-red-500/10 text-red-700'
+                        }`}>
+                          {plan.status === 'generating' ? 'Generating...' : plan.status === 'ready' ? 'Ready' : 'Error'}
+                        </div>
+                      </div>
                     </div>
-                    <div className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full">
-                      {course.preferences.difficulty}
-                    </div>
-                  </div>
-                </div>
-                <CardDescription className="line-clamp-2 mt-2">{course.description}</CardDescription>
-                {course.customPrompt && (
-                  <div className="text-xs bg-blue-50 text-blue-800 p-2 rounded border border-blue-200 mt-2">
-                    <span className="font-medium">Custom:</span> {course.customPrompt}
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-4">
-                  {/* Course Stats */}
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div className="text-center">
-                      <div className="font-semibold">{course.modules.length}</div>
-                      <div className="text-muted-foreground">Modules</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">{totalLessons}</div>
-                      <div className="text-muted-foreground">Lessons</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-semibold">{course.totalHours}h</div>
-                      <div className="text-muted-foreground">Duration</div>
-                    </div>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
-                    <div 
-                      className="bg-primary h-full rounded-full transition-all duration-500 ease-in-out" 
-                      style={{ width: `${course.progress}%` }}
-                    />
-                  </div>
+                    <CardDescription className="line-clamp-2 mt-2">{plan.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col gap-4">
+                      {/* Course Stats */}
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="text-center">
+                          <div className="font-semibold">{plan.totalDays}</div>
+                          <div className="text-muted-foreground">Days</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-semibold">{plan.hoursPerDay}h</div>
+                          <div className="text-muted-foreground">Per Day</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-semibold">{plan.totalDays * plan.hoursPerDay}h</div>
+                          <div className="text-muted-foreground">Total</div>
+                        </div>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-primary h-full rounded-full transition-all duration-500 ease-in-out" 
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
 
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span className="font-medium">{course.progress}% Completed</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" /> {course.preferences.pace}
-                    </span>
-                  </div>
-
-                  <div className="flex gap-2 mt-2">
-                    <Button variant="outline" size="sm" className="w-full" asChild>
-                      <Link href={`/courses/${course.id}`}>View Course</Link>
-                    </Button>
-                    <Button size="sm" className="w-full">Continue</Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span className="font-medium">{progress}% Completed</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4" /> Day {plan.currentDay}/{plan.totalDays}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })
+        )}
       </div>
 
       {/* --- Create Course Modal (Overlay) --- */}
