@@ -109,8 +109,18 @@ export async function uploadFileApi(file: File, folderId: string | null): Promis
   }
 }
 
-export async function getFilePreviewApi(fileId: string): Promise<{ content: string }> {
-  const res = await authenticatedFetch(`/api/file-preview?fileId=${fileId}`);
+export async function getFilePreviewApi(params: {
+  url: string;
+  mimeType: string;
+  fileName: string;
+}): Promise<{ kind: string; text?: string; error?: string }> {
+  const query = new URLSearchParams({
+    url: params.url,
+    mimeType: params.mimeType,
+    fileName: params.fileName,
+  });
+
+  const res = await authenticatedFetch(`/api/file-preview?${query.toString()}`);
   if (!res.ok) throw new Error("Failed to load text");
   return res.json();
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Card, CardTitle, CardHeader, CardContent } from "@/components/ui/card";
-import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar, Trash } from "lucide-react";
+import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -31,15 +31,28 @@ interface ChatMessage {
   sources?: Material[]; // For UI display
 }
 
-interface ChatSession {
-  id: string;
-  title: string;
-  createdAt: Date;
-  messages: ChatMessage[];
+interface ApiFileItem {
+    id: string;
+    originalName?: string;
+    folderId?: string | null;
+    content?: string;
+    type?: string;
+}
+
+interface ApiFolderItem {
+    id: string;
+    name?: string;
+}
+
+interface ApiHistoryItem {
+    id?: string;
+    role: "user" | "model";
+    content: string;
+    attachedFileIds?: string[];
 }
 
 // Convert API file item to Material
-const mapFileToMaterial = (file: any): Material => {
+const mapFileToMaterial = (file: ApiFileItem): Material => {
     // simple extension check
     const name = file.originalName || "Unknown";
     const ext = name.split('.').pop()?.toLowerCase();
@@ -62,10 +75,10 @@ const mapFileToMaterial = (file: any): Material => {
     };
 };
 
-const mapFolderToMaterial = (folder: any): Material => ({
+const mapFolderToMaterial = (folder: ApiFolderItem): Material => ({
     id: folder.id,
     type: "Folder",
-    title: folder.name,
+    title: folder.name || "Untitled Folder",
     parentId: null, // Folders in this system seem flat or parentId managed elsewhere? The test bot uses folderId on files.
     author: "System"
 });
@@ -82,7 +95,6 @@ export default function AssistantPage() {
   const [selectedFiles, setSelectedFiles] = useState<Material[]>([]);
   
   // UI State
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Initially closed as we are hiding history
   const [isLibraryPanelOpen, setIsLibraryPanelOpen] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -136,7 +148,7 @@ const fetchHistory = async () => {
             let initialMessages: ChatMessage[] = [];
             if (res.ok) {
                 const data = await res.json();
-                initialMessages = (data.history || []).map((msg: any) => ({
+                initialMessages = (data.history || []).map((msg: ApiHistoryItem) => ({
                     id: msg.id,
                     role: msg.role,
                     content: msg.content,

@@ -42,7 +42,7 @@ export function useLibraryActions(refresh: () => Promise<void>) {
       if (refreshAfter) await refresh();
       if (successMessage) showToast(successMessage, "success");
       return result === undefined ? true : result; 
-    } catch (error: any) {
+    } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Action failed";
       setActionError(message);
       showToast(message, "error");
@@ -83,9 +83,9 @@ export function useLibraryActions(refresh: () => Promise<void>) {
   const saveNote = (id: string, content: string) => 
     executeAction("Saving note...", () => updateNoteApi(id, content), "Note saved", false);
 
-  const getFilePreview = async (id: string) => {
+    const getFilePreview = async (params: { url: string; mimeType: string; fileName: string }) => {
       // Doesn't need refresh or toast usually, but can use executeAction with no success message
-      return executeAction("Loading preview...", () => getFilePreviewApi(id), undefined, false);
+      return executeAction("Loading preview...", () => getFilePreviewApi(params), undefined, false);
   }
 
   const explainText = async (text: string, context?: string) => {

@@ -12,18 +12,12 @@ import { Upload } from "lucide-react";
 
 import { 
   Material, 
-  FolderRecord, 
-  FileRecord, 
-  MaterialType, 
   PendingDeleteAction,
   PendingRenameAction,
-  PendingMoveAction,
-  DocumentPreviewKind
+  PendingMoveAction
 } from "@/lib/library/types";
 
 import { 
-  toFolderMaterial, 
-  toFileMaterial, 
   getDocumentPreviewKind,
   getBlockedFolderIds,
   checkDuplicateNoteName,
@@ -51,6 +45,7 @@ export default function LibraryPage() {
       folders: allFolders, 
       files: allFiles, 
       isLoading: isLoadingLibrary, 
+      error: libraryError,
       refresh: loadLibraryData,
       setFiles: setAllFiles 
   } = useLibraryData();
@@ -69,7 +64,8 @@ export default function LibraryPage() {
       getFilePreview,
       explainText,
       summariseText,
-      actionLoading
+        actionLoading,
+        actionError
   } = useLibraryActions(loadLibraryData);
 
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -78,8 +74,8 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isFullView, setIsFullView] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const loading = isLoadingLibrary || actionLoading;
+  const error = libraryError || actionError || "";
 
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -106,65 +102,73 @@ export default function LibraryPage() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-  const { toast, showToast, clearToast, showLoading } = useToastMessage();
+  const { toast, showToast, clearToast } = useToastMessage();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentFolder = allFolders.find((f) => f.id === currentFolderId);
 
   const displayedMaterials = getFilteredMaterials(allFolders, allFiles, currentFolderId, searchQuery);
+  const displayedFolders = displayedMaterials.filter((material) => material.type === "Folder");
+  const displayedFiles = displayedMaterials.filter((material) => material.type !== "Folder");
 
   useEffect(() => {
     if (!authLoading && !userId) router.push("/login");
   }, [userId, authLoading, router]);
 
-  // Handle selected item preview and note logic
-  const lastSelectedItemIdRef = useRef<string | null>(null);
+  const resetSelectedItemUiState = () => {
+    setDocPreviewStatus("idle");
+    setDocPreviewText(null);
+    setDocPreviewError(null);
+    setIsEditingNote(false);
+    setNoteSaveStatus("saved");
+    setNoteBaselineContent("");
+  };
 
-  useEffect(() => {
-    // If no item selected, reset everything
-    if (!selectedItem) {
-        setDocPreviewStatus("idle");
-        setDocPreviewText(null);
-        setDocPreviewError(null);
-        setIsEditingNote(false);
-        setNoteSaveStatus("saved");
-        setNoteBaselineContent("");
-        lastSelectedItemIdRef.current = null;
-        return;
+  const handleCloseSelectedItem = () => {
+    setSelectedItem(null);
+    resetSelectedItemUiState();
+  };
+
+  const handleSelectMaterial = (material: Material) => {
+    if (material.type === "Folder") {
+      setCurrentFolderId(material.id);
+      return;
     }
 
-    // If we switched to a DIFFERENT item
-    if (selectedItem.id !== lastSelectedItemIdRef.current) {
-        lastSelectedItemIdRef.current = selectedItem.id;
-        
-        if (selectedItem.type === "Note") {
-            setNoteBaselineContent(selectedItem.content || "");
-            setIsEditingNote(false); // Reset editing state
-            setNoteSaveStatus("saved");
-        } 
-        
-        if (selectedItem.source === "file" && selectedItem.type !== "Note" && selectedItem.downloadURL) {
-            const kind = getDocumentPreviewKind(selectedItem);
-            if (kind === "text") {
-                setDocPreviewStatus("loading");
-                getFilePreview(selectedItem.id)
-                    .then((data: any) => {
-                        if (data && data.content) {
-                          setDocPreviewText(data.content);
-                          setDocPreviewStatus("ready");
-                        } else {
-                           throw new Error("Invalid preview data");
-                        }
-                    })
-                    .catch(() => {
-                        setDocPreviewError("Failed to load file content.");
-                        setDocPreviewStatus("error");
-                    });
-            }
-        }
+    const isDifferentItem = selectedItem?.id !== material.id;
+    setSelectedItem(material);
+
+    if (!isDifferentItem) return;
+
+    resetSelectedItemUiState();
+
+    if (material.type === "Note") {
+      setNoteBaselineContent(material.content || "");
+      return;
     }
-  }, [selectedItem, getFilePreview]);
+
+    if (material.source === "file" && material.downloadURL && getDocumentPreviewKind(material) === "text") {
+      setDocPreviewStatus("loading");
+      void getFilePreview({
+        url: material.downloadURL,
+        mimeType: material.mimeType || "",
+        fileName: material.title,
+      })
+        .then((data) => {
+          if (data && typeof data === "object" && "text" in data && typeof data.text === "string") {
+            setDocPreviewText(data.text);
+            setDocPreviewStatus("ready");
+          } else {
+            throw new Error("Invalid preview data");
+          }
+        })
+        .catch(() => {
+          setDocPreviewError("Failed to load file content.");
+          setDocPreviewStatus("error");
+        });
+    }
+  };
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -248,7 +252,7 @@ export default function LibraryPage() {
       if (success) {
           setPendingDelete(null);
           if (selectedItem && selectedItem.id === id) {
-            setSelectedItem(null);
+            handleCloseSelectedItem();
           }
       }
   };
@@ -270,7 +274,7 @@ export default function LibraryPage() {
               // The original code set selectedItem null ONLY on Delete/MoveFile.
               // MoveFile original: setSelectedItem(null);
               // Let's implement that behavior.
-              if (type !== 'folder') setSelectedItem(null);
+            if (type !== 'folder') handleCloseSelectedItem();
           }
       }
   };
@@ -310,11 +314,13 @@ export default function LibraryPage() {
             return;
         }
         
-        const success = draggedItem.type === "folder"
-          ? await moveFolder(draggedItem.id, targetFolder.id)
-          : await moveFile(draggedItem.id, targetFolder.id);
+        if (draggedItem.type === "folder") {
+          await moveFolder(draggedItem.id, targetFolder.id);
+        } else {
+          await moveFile(draggedItem.id, targetFolder.id);
+        }
           
-      } catch (err) {
+      } catch {
           showToast("Failed to move item", "error");
       }
   };
@@ -515,24 +521,60 @@ export default function LibraryPage() {
             />
 
             {viewMode === "grid" ? (
-                <div className={`grid gap-6 pb-8 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
-                    {displayedMaterials.map(material => (
-                        <ItemCard 
-                            key={material.id}
-                            material={material}
-                            isDragOver={dragOverFolderId === material.id}
-                            onDragStart={handleItemDragStart}
-                            onDragOver={handleItemDragOver}
-                            onDragLeave={() => setDragOverFolderId(null)}
-                            onDrop={handleItemDrop}
-                            onClick={(m) => m.type === "Folder" ? setCurrentFolderId(m.id) : setSelectedItem(m)}
-                            onRename={(m) => m.source === "folder" 
-                                ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
-                                : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
-                            onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
-                            onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
-                        />
-                    ))}
+                <div className="pb-8 space-y-6">
+                    {displayedFolders.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground">Folders ({displayedFolders.length})</p>
+                        <div className={`grid gap-6 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
+                          {displayedFolders.map(material => (
+                            <ItemCard 
+                                key={material.id}
+                                material={material}
+                                isDragOver={dragOverFolderId === material.id}
+                                onDragStart={handleItemDragStart}
+                                onDragOver={handleItemDragOver}
+                                onDragLeave={() => setDragOverFolderId(null)}
+                                onDrop={handleItemDrop}
+                                onClick={handleSelectMaterial}
+                                onRename={(m) => m.source === "folder" 
+                                    ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                                    : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                                onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                                onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {displayedFolders.length > 0 && displayedFiles.length > 0 && (
+                      <div className="border-t border-dashed" />
+                    )}
+
+                    {displayedFiles.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground">Files ({displayedFiles.length})</p>
+                        <div className={`grid gap-6 ${selectedItem ? "grid-cols-1 lg:grid-cols-2" : "md:grid-cols-2 lg:grid-cols-3"}`}>
+                          {displayedFiles.map(material => (
+                            <ItemCard 
+                                key={material.id}
+                                material={material}
+                                isDragOver={dragOverFolderId === material.id}
+                                onDragStart={handleItemDragStart}
+                                onDragOver={handleItemDragOver}
+                                onDragLeave={() => setDragOverFolderId(null)}
+                                onDrop={handleItemDrop}
+                                onClick={handleSelectMaterial}
+                                onRename={(m) => m.source === "folder" 
+                                    ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                                    : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                                onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                                onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                 </div>
             ) : (
                 <div className="flex flex-col space-y-2 pb-8">
@@ -543,22 +585,52 @@ export default function LibraryPage() {
                          <div className="w-[150px] hidden md:block">Author</div>
                          <div className="w-[40px]"></div>
                      </div>
-                     {displayedMaterials.map(material => (
-                         <ItemListItem 
-                             key={material.id}
-                             material={material}
-                             isDragOver={dragOverFolderId === material.id}
-                             onDragStart={handleItemDragStart}
-                             onDragOver={handleItemDragOver}
-                             onDragLeave={() => setDragOverFolderId(null)}
-                             onDrop={handleItemDrop}
-                             onClick={(m) => m.type === "Folder" ? setCurrentFolderId(m.id) : setSelectedItem(m)}
-                             onRename={(m) => m.source === "folder" 
-                                 ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
-                                 : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
-                             onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
-                             onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
-                         />
+                     {displayedFolders.length > 0 && (
+                       <p className="px-4 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Folders ({displayedFolders.length})</p>
+                     )}
+
+                     {displayedFolders.map(material => (
+                       <ItemListItem 
+                         key={material.id}
+                         material={material}
+                         isDragOver={dragOverFolderId === material.id}
+                         onDragStart={handleItemDragStart}
+                         onDragOver={handleItemDragOver}
+                         onDragLeave={() => setDragOverFolderId(null)}
+                         onDrop={handleItemDrop}
+                         onClick={handleSelectMaterial}
+                         onRename={(m) => m.source === "folder" 
+                           ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                           : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                         onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                         onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                       />
+                     ))}
+
+                     {displayedFolders.length > 0 && displayedFiles.length > 0 && (
+                       <div className="my-2 border-t border-dashed" />
+                     )}
+
+                     {displayedFiles.length > 0 && (
+                       <p className="px-4 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Files ({displayedFiles.length})</p>
+                     )}
+
+                     {displayedFiles.map(material => (
+                       <ItemListItem 
+                         key={material.id}
+                         material={material}
+                         isDragOver={dragOverFolderId === material.id}
+                         onDragStart={handleItemDragStart}
+                         onDragOver={handleItemDragOver}
+                         onDragLeave={() => setDragOverFolderId(null)}
+                         onDrop={handleItemDrop}
+                         onClick={handleSelectMaterial}
+                         onRename={(m) => m.source === "folder" 
+                           ? setPendingRename({ id: m.id, type: "folder", parentId: m.parentId, currentName: m.title, newName: m.title }) 
+                           : setPendingRename({ id: m.id, type: "file", parentId: m.parentId, currentName: m.title, newName: m.title })}
+                         onMove={(m) => setPendingMove({ id: m.id, type: m.source === "folder" ? "folder" : "file", currentParentId: m.parentId })}
+                         onDelete={(m) => setPendingDelete({ id: m.id, type: m.source === "folder" ? "folder" : "file", label: m.title })}
+                       />
                      ))}
                 </div>
             )}
@@ -568,7 +640,7 @@ export default function LibraryPage() {
       {selectedItem && (
           <SelectedItemPanel 
               selectedItem={selectedItem}
-              onClose={() => setSelectedItem(null)}
+            onClose={handleCloseSelectedItem}
               isFullView={isFullView}
               onToggleFullView={() => setIsFullView(!isFullView)}
               isEditingNote={isEditingNote}
