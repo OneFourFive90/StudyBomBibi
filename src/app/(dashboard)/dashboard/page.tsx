@@ -307,7 +307,7 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-center gap-3 overflow-hidden">
                       <div className="p-2 bg-secondary rounded-md shrink-0">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <FileText className="h-4 w-4 text-muted" />
                       </div>
                       <div className="min-w-0">
                         <p className="font-medium text-sm truncate" title={exam.title}>{exam.title}</p>

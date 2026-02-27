@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { 
   Clock, 
   Sparkles,
   ChevronDown,
   ArrowUp,
   ArrowDown,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -40,6 +42,13 @@ type Material = {
   parentId: string | null;
 };
 
+type FileData = {
+  id: string;
+  originalName?: string;
+  name?: string;
+  folderId?: string;
+};
+
 // Mock Library Data (Folders & Files) - used as fallback if no real files exist
 const mockLibraryMaterials: Material[] = [
   { id: "1", title: "Introduction to CS", type: "Folder", parentId: null },
@@ -63,6 +72,7 @@ export default function AICoursePage() {
   const [sortBy, setSortBy] = useState<'createdAt' | 'lastAccessedAt' | 'name'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Material Selection State
   const [libraryMaterials, setLibraryMaterials] = useState<Material[]>(mockLibraryMaterials);
@@ -137,7 +147,7 @@ export default function AICoursePage() {
 
         // Add files
         if (filesData.files && Array.isArray(filesData.files)) {
-          filesData.files.forEach((file: any) => {
+          filesData.files.forEach((file: FileData) => {
             materials.push({
               id: file.id,
               title: file.originalName || file.name || "Untitled",
@@ -162,8 +172,8 @@ export default function AICoursePage() {
 
   // --- Handlers ---
 
-  const getSortedPlans = () => {
-    const sorted = [...studyPlans];
+  const getSortedPlans = (plans: StudyPlan[]) => {
+    const sorted = [...plans];
     
     if (sortBy === 'createdAt') {
       if (sortOrder === 'desc') {
@@ -201,93 +211,108 @@ export default function AICoursePage() {
     }
   };
 
+  const filteredPlans = studyPlans.filter((plan) => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    const title = String(plan.courseTitle ?? "").toLowerCase();
+    const description = String(plan.description ?? "").toLowerCase();
+    const status = String(plan.status ?? "").toLowerCase();
+    const format = String(plan.format ?? "").toLowerCase();
+
+    return (
+      title.includes(query) ||
+      description.includes(query) ||
+      status.includes(query) ||
+      format.includes(query)
+    );
+  });
+
+  const displayedPlans = getSortedPlans(filteredPlans);
+
   return (
     <div className="space-y-6 relative h-full">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My AI Courses</h1>
           <p className="text-muted-foreground mt-2">Create personalized AI-generated courses from your materials with custom prompts and preferences.</p>
         </div>
-        <Button className="gap-2" onClick={() => setIsCreating(true)}>
-          <Sparkles className="h-4 w-4" />
-          Generate Course
-        </Button>
-      </div>
-
-      {/* Sort Controls */}
-      {studyPlans.length > 0 && (
-        <div className="flex items-center gap-2 relative">
-          <div className="flex items-center gap-2 border rounded-md bg-background">
-            <div className="relative">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="gap-2"
-              >
-                {getSortLabel()}
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-              
-              {showSortDropdown && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-background border rounded-md shadow-lg z-50">
-                  <button 
-                    onClick={() => {
-                      setSortBy('createdAt');
-                      setShowSortDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
-                      sortBy === 'createdAt' ? 'bg-primary/10 text-primary font-semibold' : ''
-                    }`}
-                  >
-                    Time Created
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setSortBy('lastAccessedAt');
-                      setShowSortDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
-                      sortBy === 'lastAccessedAt' ? 'bg-primary/10 text-primary font-semibold' : ''
-                    }`}
-                  >
-                    Last Access
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setSortBy('name');
-                      setShowSortDropdown(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${
-                      sortBy === 'name' ? 'bg-primary/10 text-primary font-semibold' : ''
-                    }`}
-                  >
-                    Name
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            <div className="border-l h-6" />
-            
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-              title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
-              className="gap-1"
-            >
-              {sortOrder === 'asc' ? (
-                <ArrowUp className="h-4 w-4" />
-              ) : (
-                <ArrowDown className="h-4 w-4" />
-              )}
-            </Button>
+        <div className="flex gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64 md:flex-none">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search courses..."
+              className="pl-8"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
           </div>
+
+          {displayedPlans.length > 0 && (
+            <div className="flex items-center gap-2 border rounded-md bg-background">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className="inline-flex items-center justify-between gap-2 h-9 w-40 px-3 text-sm hover:bg-accent rounded-md"
+                >
+                  <span className="truncate whitespace-nowrap">{getSortLabel()}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0" />
+                </button>
+
+                {showSortDropdown && (
+                  <div className="absolute top-full left-0 mt-1 w-48 bg-background border rounded-md shadow-lg z-50">
+                    <button
+                      onClick={() => {
+                        setSortBy('createdAt');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${sortBy === 'createdAt' ? 'bg-primary/10 text-primary font-semibold' : ''}`}
+                    >
+                      Time Created
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSortBy('lastAccessedAt');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${sortBy === 'lastAccessedAt' ? 'bg-primary/10 text-primary font-semibold' : ''}`}
+                    >
+                      Last Access
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSortBy('name');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-accent ${sortBy === 'name' ? 'bg-primary/10 text-primary font-semibold' : ''}`}
+                    >
+                      Name
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-l h-6" />
+
+              <button
+                type="button"
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                className="inline-flex items-center gap-1 h-9 px-3 text-sm hover:bg-accent rounded-md"
+              >
+                {sortOrder === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />}
+              </button>
+            </div>
+          )}
+
+          <Button className="gap-2" onClick={() => setIsCreating(true)}>
+            <Sparkles className="h-4 w-4" />
+            Generate Course
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* Courses Grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -299,8 +324,12 @@ export default function AICoursePage() {
           <div className="col-span-full flex items-center justify-center py-12">
             <p className="text-muted-foreground">No courses yet. Create your first AI course!</p>
           </div>
+        ) : displayedPlans.length === 0 ? (
+          <div className="col-span-full flex items-center justify-center py-12">
+            <p className="text-muted-foreground">No courses found for your search.</p>
+          </div>
         ) : (
-          getSortedPlans().map((plan) => {
+          displayedPlans.map((plan) => {
             const progress = plan.progress || 0;
             
             return (

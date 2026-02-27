@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Library, BookOpen, GraduationCap, Bot, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
   return (
@@ -12,13 +14,16 @@ export default function Home() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6 h-16 flex items-center transition-all">
         <Link className="flex items-center justify-center gap-2 transition-transform hover:scale-105" href="/">
           <div className="bg-primary/10 p-1.5 rounded-lg">
-            <Sparkles className="h-5 w-5 text-primary" />
+             <Image src="/favicon.ico" alt="StudyBomBibi" width={20} height={20} className="w-5 h-5" unoptimized />
           </div>
           <span className="text-xl font-bold tracking-tight">StudyBomBibi</span>
         </Link>
         <nav className="ml-auto flex items-center gap-4 sm:gap-6">
-          <Link className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors" href="/login">
-            Log in
+          <ThemeToggle />
+          <Link href="/login">
+            <Button variant="ghost" size="sm">
+              Log in
+            </Button>
           </Link>
           <Link href="/login">
             <Button size="sm" className="hidden sm:flex gap-2">
@@ -59,7 +64,7 @@ export default function Home() {
                   </Button>
                 </Link>
                 <Link href="#features" className="w-full sm:w-auto">
-                  <Button variant="outline" size="lg" className="w-full h-12 px-8 text-base">
+                  <Button variant="ghost" size="lg" className="w-full h-12 px-8 text-base">
                     How it Works
                   </Button>
                 </Link>
