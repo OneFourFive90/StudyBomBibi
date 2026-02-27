@@ -63,6 +63,8 @@ This document describes the current enhanced study plan assets system that handl
   // Asset tracking
   assetStatus?: "pending" | "generating" | "ready" | "failed"
   assets?: ActivityAsset[]
+  // Completion tracking
+  isCompleted?: boolean // Section completion status (NEW)
 }
 
 interface ActivityAsset {

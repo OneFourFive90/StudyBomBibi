@@ -33,6 +33,7 @@ type StudyPlan = {
   totalDays: number;
   currentDay: number;
   hoursPerDay: number;
+  progress: number;
   status: string;
   format: "Text" | "Image" | "Video";
   createdAt: Date;
@@ -315,12 +316,12 @@ export default function AICoursePage() {
           </div>
         ) : (
           getSortedPlans().map((plan) => {
-            const progress = Math.round((plan.currentDay / plan.totalDays) * 100);
+            const progress = plan.progress || 0;
             
             return (
               <Link href={`/courses/${plan.id}`} key={plan.id} className="block">
                 <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ 
-                  borderLeftColor: plan.format === 'Video' ? '#3b82f6' : plan.format === 'Image' ? '#10b981' : '#f59e0b' 
+                  // borderLeftColor: plan.format === 'Video' ? '#3b82f6' : plan.format === 'Image' ? '#10b981' : '#f59e0b' 
                 }}>
                   <CardHeader>
                     <div className="flex justify-between items-start">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { updateActivityCompletionStatus } from "@/lib/firebase/firestore/study-plan/updateStudyPlan";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, Clock, CheckCircle2, BookOpen, Play, PanelLeftClose, PanelLeftOpen, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -121,7 +122,7 @@ export default function CourseDetailPage() {
     fetchPlan();
   }, [courseId, userId]);
 
-  // Fetch daily modules and assets
+  // Fetch daily modules and assets, and sync completion status
   useEffect(() => {
     if (!studyPlan || !courseId) return;
 
@@ -140,14 +141,31 @@ export default function CourseDetailPage() {
             activities: data.activities || [],
           };
         }) as DailyModule[];
-        
+
         setDailyModules(modules.sort((a, b) => a.order - b.order));
+
+        // Sync completedSections state with Firestore
+        const newCompletedSections = new Set<string>();
+        modules.forEach(module => {
+          // Learning material section
+          const materialIdx = module.activities.findIndex(a => a.type !== "quiz");
+          if (materialIdx !== -1 && module.activities[materialIdx].isCompleted) {
+            newCompletedSections.add(getSectionKey(module.order, "materials"));
+          }
+          // Quiz sections
+          module.activities.forEach((activity, idx) => {
+            if (activity.type === "quiz" && activity.isCompleted) {
+              newCompletedSections.add(getSectionKey(module.order, "quiz", idx));
+            }
+          });
+        });
+        setCompletedSections(newCompletedSections);
 
         // Fetch asset URLs from Firestore
         const assetsRef = collection(db, 'studyplanAIAssets');
         const q = query(assetsRef, where('planId', '==', courseId));
         const assetsSnapshot = await getDocs(q);
-        
+
         const urls: Record<string, string> = {};
         assetsSnapshot.docs.forEach(doc => {
           const asset = doc.data();
@@ -155,7 +173,7 @@ export default function CourseDetailPage() {
             urls[doc.id] = asset.downloadUrl;
           }
         });
-        
+
         setAssetUrls(urls);
       } catch (error) {
         console.error('Error fetching modules:', error);
@@ -205,23 +223,67 @@ export default function CourseDetailPage() {
     return `day-${day}-quiz-${quizIndex}`;
   };
 
-  const handleToggleSectionComplete = () => {
-    if (activeModuleDay === null) return;
+  const handleToggleSectionComplete = async () => {
+    if (activeModuleDay === null || !currentModule) return;
     let key;
     if (activeQuizIndex === null) {
       key = getSectionKey(activeModuleDay, "materials");
+      // Learning material = all non-quiz activities
+      const materialIndices = currentModule.activities
+        .map((a, idx) => (a.type !== "quiz" ? idx : -1))
+        .filter(idx => idx !== -1);
+      const willComplete = !completedSections.has(key);
+      setCompletedSections(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(key)) {
+          newSet.delete(key);
+        } else {
+          newSet.add(key);
+        }
+        return newSet;
+      });
+      // Update all non-quiz activities' completion status in Firestore
+      if (materialIndices.length > 0) {
+        try {
+          for (const idx of materialIndices) {
+            await updateActivityCompletionStatus(
+              courseId,
+              currentModule.id,
+              idx,
+              willComplete
+            );
+          }
+        } catch (err) {
+          console.error("Failed to update material completion status:", err);
+        }
+      }
     } else {
       key = getSectionKey(activeModuleDay, "quiz", activeQuizIndex);
-    }
-    setCompletedSections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(key)) {
-        newSet.delete(key);
-      } else {
-        newSet.add(key);
+      // Find the quiz activity index
+      const activityIndex = currentModule.activities.findIndex((a, idx) => a.type === "quiz" && idx === activeQuizIndex);
+      setCompletedSections(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(key)) {
+          newSet.delete(key);
+        } else {
+          newSet.add(key);
+        }
+        return newSet;
+      });
+      // Update Firestore completion status
+      if (activityIndex !== -1) {
+        try {
+          await updateActivityCompletionStatus(
+            courseId,
+            currentModule.id,
+            activityIndex,
+            !completedSections.has(key)
+          );
+        } catch (err) {
+          console.error("Failed to update completion status:", err);
+        }
       }
-      return newSet;
-    });
+    }
   };
 
   // Each quiz is a section, and materials are one section per day
@@ -534,7 +596,7 @@ export default function CourseDetailPage() {
                           setQuizSubmitted(false);
                           setCurrentQuizQuestion(0);
                           setSelectedAnswers([]);
-                          // Go to next section
+                          // Quiz completion already saved when user clicked Submit
                           goToNextSection();
                         }}
                         className="w-full sm:w-auto bg-primary text-white"
@@ -610,8 +672,30 @@ export default function CourseDetailPage() {
                         ) : (
                           <Button
                             className="bg-primary text-white"
-                            onClick={() => {
+                            onClick={async () => {
                               setQuizSubmitted(true);
+                              // Save quiz completion to Firestore immediately
+                              if (activeModuleDay !== null && currentModule && activeQuizIndex !== null) {
+                                const activityIndex = currentModule.activities.findIndex((a, idx) => a.type === "quiz" && idx === activeQuizIndex);
+                                if (activityIndex !== -1) {
+                                  try {
+                                    await updateActivityCompletionStatus(
+                                      courseId,
+                                      currentModule.id,
+                                      activityIndex,
+                                      true
+                                    );
+                                    // Update frontend state
+                                    setCompletedSections(prev => {
+                                      const newSet = new Set(prev);
+                                      newSet.add(getSectionKey(activeModuleDay, "quiz", activeQuizIndex));
+                                      return newSet;
+                                    });
+                                  } catch (err) {
+                                    console.error("Failed to save quiz completion:", err);
+                                  }
+                                }
+                              }
                             }}
                           >
                             Submit Quiz

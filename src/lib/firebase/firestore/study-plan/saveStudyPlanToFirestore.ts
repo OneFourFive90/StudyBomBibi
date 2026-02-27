@@ -59,6 +59,7 @@ export interface AIStudyPlanResponse {
 export interface StoredActivity extends AIActivity {
   assetStatus?: "pending" | "generating" | "ready" | "failed";
   assets?: ActivityAsset[]; // References to individual assets
+  isCompleted?: boolean; // Completion status for this activity
 }
 
 // Individual asset reference within an activity
@@ -155,6 +156,9 @@ export async function saveStudyPlanToFirestore(
         const storedActivity: StoredActivity = { ...activity };
         const assets: ActivityAsset[] = [];
 
+        // Set completion status for each activity (default: false)
+        storedActivity.isCompleted = false;
+
         if (activity.type === "video" && activity.video_segments) {
           // Create assets for each video segment (image + audio)
           activity.video_segments.forEach((segment, segmentIndex) => {
@@ -168,7 +172,6 @@ export async function saveStudyPlanToFirestore(
               segmentIndex,
               prompt: `Slide: ${segment.slide_title}. Bullets: ${segment.bullets.join(", ")}`,
             }, now);
-            
             pendingAssetIds.push(slideImageAssetId);
             assets.push({
               assetId: slideImageAssetId,
@@ -186,7 +189,6 @@ export async function saveStudyPlanToFirestore(
               segmentIndex,
               prompt: segment.script,
             }, now);
-            
             pendingAssetIds.push(scriptAudioAssetId);
             assets.push({
               assetId: scriptAudioAssetId,
@@ -194,7 +196,6 @@ export async function saveStudyPlanToFirestore(
               segmentIndex,
             });
           });
-          
           storedActivity.assetStatus = "pending";
           storedActivity.assets = assets;
         } else if (activity.type === "image" && activity.image_description) {
@@ -207,7 +208,6 @@ export async function saveStudyPlanToFirestore(
             assetType: "single_image",
             prompt: activity.image_description,
           }, now);
-          
           pendingAssetIds.push(imageAssetId);
           storedActivity.assetStatus = "pending";
           storedActivity.assets = [{
