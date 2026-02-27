@@ -12,11 +12,15 @@ export interface StudyPlanAssetDocument {
   planId: string;
   dailyModuleId: string;
   activityIndex: number;
-  type: "video" | "image";
+  assetType: "slide_image" | "script_audio" | "single_image";
+  segmentIndex?: number; // For video segments
+  prompt?: string; // Image description or TTS script
   status: "pending" | "generating" | "ready" | "failed";
   storagePath: string | null;
   downloadUrl: string | null;
+  errorMessage?: string;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface CreateAssetInput {
@@ -24,7 +28,9 @@ export interface CreateAssetInput {
   planId: string;
   dailyModuleId: string;
   activityIndex: number;
-  type: "video" | "image";
+  assetType: "slide_image" | "script_audio" | "single_image";
+  segmentIndex?: number;
+  prompt?: string;
 }
 
 export interface CreateAssetResult {
@@ -41,20 +47,31 @@ export function createPendingAsset(
   input: CreateAssetInput,
   timestamp: Timestamp
 ): CreateAssetResult {
-  const { ownerId, planId, dailyModuleId, activityIndex, type } = input;
+  const { ownerId, planId, dailyModuleId, activityIndex, assetType, segmentIndex, prompt } = input;
 
   const assetRef = doc(collection(db, "studyplanAIAssets"));
+  
+  // Build asset data conditionally - only include fields with actual values
+  // Firestore doesn't allow undefined values
   const assetData: StudyPlanAssetDocument = {
     ownerId,
     planId,
     dailyModuleId,
     activityIndex,
-    type,
+    assetType,
     status: "pending",
     storagePath: null,
     downloadUrl: null,
     createdAt: timestamp,
   };
+  
+  // Conditionally add optional fields
+  if (segmentIndex !== undefined) {
+    assetData.segmentIndex = segmentIndex;
+  }
+  if (prompt !== undefined) {
+    assetData.prompt = prompt;
+  }
 
   return {
     assetId: assetRef.id,

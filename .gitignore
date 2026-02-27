@@ -13,6 +13,7 @@ google-credentials.json
 !.yarn/versions
 
 # testing
+/debug/gemini-responses
 /coverage
 
 # next.js

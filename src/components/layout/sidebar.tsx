@@ -16,8 +16,8 @@ const sidebarNavItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Personalized Learning System",
-    href: "/study-planner",
+    title: "AI Courses",
+    href: "/courses",
     icon: BookOpen,
   },
   {
