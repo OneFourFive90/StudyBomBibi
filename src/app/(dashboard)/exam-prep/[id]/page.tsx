@@ -143,8 +143,17 @@ export default function ExamPage() {
             existingMcqAnswers[question.id] = question.userSelectedIndex;
           }
 
-          if (question.type === "structured" && question.userAnswerText) {
-            existingStructuredAnswers[question.id] = question.userAnswerText;
+          if (question.type === "structured") {
+             if (question.userAnswerText) {
+                existingStructuredAnswers[question.id] = question.userAnswerText;
+             }
+             if (question.subQuestions) {
+                question.subQuestions.forEach(sq => {
+                    if (sq.userAnswerText) {
+                        existingStructuredAnswers[`${question.id}_sub_${sq.id}`] = sq.userAnswerText;
+                    }
+                });
+             }
           }
         });
 
@@ -292,9 +301,19 @@ export default function ExamPage() {
           };
         }
 
+        // Handle subquestions if they exist
+        let subQuestions = question.subQuestions;
+        if (question.subQuestions && question.subQuestions.length > 0) {
+            subQuestions = question.subQuestions.map(sq => ({
+                 ...sq,
+                 userAnswerText: (structuredAnswers[`${question.id}_sub_${sq.id}`] || "").trim() || null
+             }));
+        }
+
         const answerText = (structuredAnswers[question.id] || "").trim();
         return {
           ...question,
+          subQuestions,
           userAnswerText: answerText || null,
           selfGradedScore: question.selfGradedScore ?? null,
         };
@@ -352,9 +371,15 @@ export default function ExamPage() {
           };
         }
 
+        const resetSubQuestions = question.subQuestions?.map(sq => ({
+            ...sq,
+            userAnswerText: null
+        }));
+
         return {
           ...question,
           userAnswerText: null,
+          subQuestions: resetSubQuestions || question.subQuestions,
           selfGradedScore: null,
         };
       });
@@ -594,21 +619,54 @@ export default function ExamPage() {
                     )}
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <textarea
-                      className="w-full min-h-[120px] rounded-md border bg-background px-3 py-2 text-sm"
-                      placeholder="Write your structured answer here..."
-                      value={structuredAnswers[q.id] || ""}
-                      onChange={(event) =>
-                        setStructuredAnswers((prev) => ({ ...prev, [q.id]: event.target.value }))
-                      }
-                      disabled={isQuestionConfirmed || !isExamStarted || isViewOnly}
-                    />
-                    {isSubmitted && (
-                      <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                        <p className="font-medium mb-1">Suggested Answer</p>
-                        <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
+                  <div className="space-y-4">
+                     {/* Render Subquestions if available, otherwise Main Question Answer */}
+                     {q.subQuestions && q.subQuestions.length > 0 ? (
+                      <div className="space-y-6">
+                        {q.subQuestions.map((subQ) => (
+                           <div key={subQ.id} className="border-l-2 pl-4 border-muted">
+                              <div className="flex justify-between items-start mb-2">
+                                <Label className="text-sm font-semibold">
+                                  {subQ.id}) {subQ.question}
+                                </Label>
+                                <span className="text-xs text-muted-foreground">({subQ.marks} marks)</span>
+                              </div>
+                              <textarea
+                                className="w-full min-h-[80px] rounded-md border bg-background px-3 py-2 text-sm"
+                                placeholder={`Answer for ${subQ.id}...`}
+                                value={structuredAnswers[`${q.id}_sub_${subQ.id}`] || ""}
+                                onChange={(event) =>
+                                  setStructuredAnswers((prev) => ({ ...prev, [`${q.id}_sub_${subQ.id}`]: event.target.value }))
+                                }
+                                disabled={isQuestionConfirmed || !isExamStarted || isViewOnly}
+                              />
+                                {isSubmitted && (
+                                <div className="mt-2 rounded-md border bg-muted/30 p-2 text-sm">
+                                  <p className="font-medium text-xs mb-1">Suggested Answer</p>
+                                  <MarkdownBlock content={subQ.sampleAnswer} className="text-muted-foreground text-xs" />
+                                </div>
+                              )}
+                           </div>
+                        ))}
                       </div>
+                    ) : (
+                      <>
+                        <textarea
+                          className="w-full min-h-[120px] rounded-md border bg-background px-3 py-2 text-sm"
+                          placeholder="Write your structured answer here..."
+                          value={structuredAnswers[q.id] || ""}
+                          onChange={(event) =>
+                            setStructuredAnswers((prev) => ({ ...prev, [q.id]: event.target.value }))
+                          }
+                          disabled={isQuestionConfirmed || !isExamStarted || isViewOnly}
+                        />
+                        {isSubmitted && (
+                          <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium mb-1">Suggested Answer</p>
+                            <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

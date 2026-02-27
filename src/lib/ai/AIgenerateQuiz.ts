@@ -98,6 +98,9 @@ export async function generateQuizWithAI(
       8. Numbering rules are strict:
         - Set "id" as sequential integers starting from 1 with no gaps, duplicates, or reordering.
         - Do NOT include numbering prefixes in "question" text (e.g., avoid "Q1.", "1)", "Question 1").
+      9. For structured questions that have multiple parts (e.g., a), b), c)), use the "sub_questions" array.
+         - Breakdown the total marks for the question into the sub-questions.
+         - If a question has sub-questions, each sub-question must have its own "answer_key".
       
       **Output Format:** Strictly JSON.
       {
@@ -112,7 +115,15 @@ export async function generateQuizWithAI(
             "question": "String",
             "marks": Number,
             "options": ["String", "String", "String", "String"] | null,
-            "answer_key": "String (Exact option for MCQ, or detailed bullet-point answer key for structured)",
+            "sub_questions": [ // Optional, only for structured questions with parts
+              {
+                "id": "String (e.g. 'a', 'b', 'i', 'ii')",
+                "question": "String",
+                "marks": Number,
+                "answer_key": "String"
+              }
+            ] | null,
+            "answer_key": "String (Exact option for MCQ, or detailed bullet-point answer key for structured without sub-questions)",
             "explanation": "String (Required for MCQ: why the answer_key is correct; optional for structured)"
           }
         ]

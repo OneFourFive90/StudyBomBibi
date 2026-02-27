@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea"; 
-import { ArrowLeft, Clock, FileText, RefreshCw, Save, Upload, Library, X, Check, FileType, BrainCircuit } from "lucide-react";
+import { ArrowLeft, Clock, FileText, RefreshCw, Save, Upload, Library, X, Check, FileType, BrainCircuit, Folder, ChevronRight, Home } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,12 @@ interface GeneratedContent {
       type: "structural" | "essay" | "mcq";
       options?: string[]; // For MCQ only
       sampleAnswer: string; // Correct answer or explanation
+      subQuestions?: {
+        id: string;
+        question: string;
+        marks: number;
+        sampleAnswer: string;
+      }[];
     }[];
   }[];
 }
@@ -57,6 +63,13 @@ interface LibraryFile {
   name: string;
   type: string;
   mimeType: string;
+  folderId?: string | null;
+}
+
+interface LibraryFolder {
+  id: string;
+  name: string;
+  parentId?: string | null;
 }
 
 interface GeneratedQuizPayload {
@@ -194,6 +207,7 @@ function mapGeneratedQuizToPreview(data: GeneratedQuizPayload): GeneratedContent
             marks: question.marks,
             question: question.question,
             sampleAnswer: question.sampleAnswer,
+            subQuestions: question.subQuestions,
           };
         }),
       },
@@ -213,6 +227,8 @@ export default function GeneratorPage() {
   const [generatedPayload, setGeneratedPayload] = useState<GeneratedQuizPayload | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [libraryFiles, setLibraryFiles] = useState<LibraryFile[]>([]);
+  const [libraryFolders, setLibraryFolders] = useState<LibraryFolder[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
 
   // Form State
   const [mode, setMode] = useState<"quiz" | "paper">("paper");
@@ -235,21 +251,31 @@ export default function GeneratorPage() {
   const loadLibraryFiles = async (activeUserId: string): Promise<LibraryFile[]> => {
     setIsLibraryLoading(true);
     try {
-      const response = await authenticatedFetch(`/api/get-files?userId=${encodeURIComponent(activeUserId)}`);
-      if (!response.ok) {
-        const data = await response.json();
+      const [filesRes, foldersRes] = await Promise.all([
+        authenticatedFetch(`/api/get-files?userId=${encodeURIComponent(activeUserId)}`),
+        authenticatedFetch(`/api/folders?action=get-all&userId=${encodeURIComponent(activeUserId)}`)
+      ]);
+
+      if (!filesRes.ok) {
+        const data = await filesRes.json();
         throw new Error(data.error || "Failed to load library files");
       }
 
-      const data = await response.json();
-      const files = (data.files || []).map((file: { id: string; originalName: string; mimeType: string }) => ({
+      const filesData = await filesRes.json();
+      const files = (filesData.files || []).map((file: any) => ({
         id: file.id,
         name: file.originalName,
         type: getFileTypeLabel(file.originalName, file.mimeType),
         mimeType: file.mimeType,
+        folderId: file.folderId || null,
       }));
-
       setLibraryFiles(files);
+
+      if (foldersRes.ok) {
+        const foldersData = await foldersRes.json();
+        setLibraryFolders(foldersData.folders || []);
+      }
+      
       return files;
     } finally {
       setIsLibraryLoading(false);
@@ -525,6 +551,7 @@ export default function GeneratorPage() {
             variant="outline"
             onClick={() => {
               setLibraryTarget(target);
+              setCurrentFolderId(null);
               setIsLibraryOpen(true);
             }}
             className="flex-1"
@@ -827,11 +854,39 @@ export default function GeneratorPage() {
                                                         ))}
                                                     </div>
                                                 ) : q.type === "structural" ? (
+                                                   q.subQuestions && q.subQuestions.length > 0 ? (
+                                                     <div className="space-y-4 pl-4 border-l-2 border-muted-foreground/30">
+                                                      {q.subQuestions.map((sq) => (
+                                                        <div key={sq.id} className="mb-4">
+                                                          <div className="flex justify-between items-center mb-2">
+                                                            <span className="font-semibold">{sq.id})</span>
+                                                            <span className="text-xs text-muted-foreground ml-2">({sq.marks} marks)</span>
+                                                          </div>
+                                                          <div className="mb-2">
+                                                            <MarkdownBlock content={sq.question} />
+                                                          </div>
+                                                          <div className="space-y-2 pl-4">
+                                                            <div className="h-6 border-b border-muted-foreground/30 w-full"></div>
+                                                            <div className="h-6 border-b border-muted-foreground/30 w-3/4"></div>
+                                                          </div>
+                                                          
+                                                          {/* Show sub-question answer if parent is revealed */}
+                                                          {revealedAnswers.has(q.id) && (
+                                                            <div className="mt-2 p-3 bg-muted rounded text-sm relative">
+                                                              <div className="absolute top-2 right-2 text-xs text-muted-foreground uppercase tracking-wider font-bold">Answer ({sq.id})</div>
+                                                              <MarkdownBlock content={sq.sampleAnswer} />
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                     </div>
+                                                   ) : (
                                                     <div className="space-y-3 pl-4 border-l-2 border-dashed border-muted-foreground/30">
                                                         <div className="h-6 border-b border-muted-foreground/30 w-full"></div>
                                                         <div className="h-6 border-b border-muted-foreground/30 w-3/4"></div>
                                                         <div className="h-6 border-b border-muted-foreground/30 w-1/2"></div>
                                                     </div>
+                                                   )
                                                 ) : (
                                                     <div className="h-32 border rounded-md bg-background/50 p-4 text-muted-foreground text-sm italic">
                                                         (Essay answer space...)
@@ -852,8 +907,16 @@ export default function GeneratorPage() {
                                                 
                                                 {revealedAnswers.has(q.id) && (
                                                     <div className="bg-background/80 p-4 rounded-md border text-sm text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-200">
-                                                        <strong className="block text-foreground mb-1 text-xs uppercase tracking-wider">Suggested Answer:</strong>
-                                                    <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
+                                                        <strong className="block text-foreground mb-1 text-xs uppercase tracking-wider">
+                                                          {q.type === "structural" && q.subQuestions && q.subQuestions.length > 0
+                                                            ? "Overall Suggested Answer / Notes:" 
+                                                            : "Suggested Answer:"}
+                                                        </strong>
+                                                        {q.type === "structural" && q.subQuestions && q.subQuestions.length > 0 && !q.sampleAnswer ? (
+                                                            <p className="italic">See individual answers above.</p>
+                                                        ) : (
+                                                            <MarkdownBlock content={q.sampleAnswer} className="text-muted-foreground" />
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -947,38 +1010,104 @@ export default function GeneratorPage() {
                 <X className="h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto">
+            <CardContent className="space-y-2 max-h-[60vh] overflow-y-auto">
               {isLibraryLoading && (
-                <div className="text-sm text-muted-foreground">Loading library files...</div>
+                <div className="text-sm text-muted-foreground p-4 text-center">Loading library files...</div>
               )}
-              {!isLibraryLoading && libraryFiles.length === 0 && (
-                <div className="text-sm text-muted-foreground">No files found in your library.</div>
-              )}
-              {libraryFiles.map((file) => (
-                <div 
-                  key={file.id} 
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors",
-                    getSelectedFilesByTarget(libraryTarget).some(f => f.id === file.id)
-                      ? "bg-primary/10 border-primary" 
-                      : "hover:bg-accent"
-                  )}
-                  onClick={() => toggleLibraryFile(file, libraryTarget)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="bg-muted p-2 rounded">
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{file.name}</p>
-                      <p className="text-xs text-muted-foreground">{file.type}</p>
-                    </div>
+              
+              {!isLibraryLoading && (
+                <>
+                  {/* Breadcrumbs / Back Navigation */}
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b text-sm">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setCurrentFolderId(null)}
+                      disabled={!currentFolderId}
+                    >
+                      <Home className="h-4 w-4" />
+                    </Button>
+                    {currentFolderId && (
+                      <>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium truncate max-w-[150px]">
+                          {libraryFolders.find(f => f.id === currentFolderId)?.name || "Folder"}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  {getSelectedFilesByTarget(libraryTarget).some(f => f.id === file.id) && (
-                    <Check className="h-5 w-5 text-primary" />
+
+                  {/* Empty State */}
+                  {libraryFolders.length === 0 && libraryFiles.length === 0 && (
+                     <div className="text-sm text-muted-foreground p-8 text-center">Library is empty.</div>
                   )}
-                </div>
-              ))}
+
+                  {/* Folders - only show at root level since structure is flat for now */}
+                  <div className="space-y-1">
+                    {!currentFolderId && libraryFolders.map((folder) => (
+                      <div
+                        key={folder.id}
+                        className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer group"
+                        onClick={() => setCurrentFolderId(folder.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Folder className="h-5 w-5 text-blue-400 fill-blue-400/20" />
+                          <span className="text-sm font-medium">{folder.name}</span>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Files - filtered by current folder */}
+                  <div className="space-y-1">
+                    {libraryFiles
+                      .filter((file) => {
+                          const fileFolderId = file.folderId || null;
+                          const current = currentFolderId || null;
+                          return fileFolderId === current;
+                      })
+                      .map((file) => {
+                        const isSelected = getSelectedFilesByTarget(libraryTarget).some(f => f.id === file.id);
+                        return (
+                          <div
+                            key={file.id}
+                            className={cn(
+                              "flex items-center justify-between p-2 rounded-md border border-transparent cursor-pointer transition-colors",
+                              isSelected
+                                ? "bg-primary/10 border-primary/20"
+                                : "hover:bg-accent hover:border-accent"
+                            )}
+                            onClick={() => toggleLibraryFile(file, libraryTarget)}
+                          >
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <div className={cn("p-1.5 rounded shrink-0", isSelected ? "bg-primary/20" : "bg-muted")}>
+                                <FileText className={cn("h-4 w-4", isSelected ? "text-primary" : "text-muted-foreground")} />
+                              </div>
+                              <div className="overflow-hidden">
+                                <p className="font-medium text-sm truncate">{file.name}</p>
+                                <p className="text-[10px] text-muted-foreground uppercase">{file.type}</p>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-primary shrink-0" />
+                            )}
+                          </div>
+                        );
+                      })}
+                      
+                      {/* Empty Folder State */}
+                      {!isLibraryLoading && 
+                       libraryFolders.filter(f => (f.parentId || null) === currentFolderId).length === 0 &&
+                       libraryFiles.filter(f => (f.folderId || null) === currentFolderId).length === 0 && (
+                        <div className="text-sm text-muted-foreground py-8 text-center italic">
+                          This folder is empty.
+                        </div>
+                      )}
+                  </div>
+                </>
+              )}
             </CardContent>
             <div className="p-4 border-t flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsLibraryOpen(false)}>

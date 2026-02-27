@@ -20,11 +20,20 @@ export interface MCQQuestion {
 }
 
 // Firestore questions array object
+export interface SubQuestion {
+  id: string;
+  question: string;
+  marks: number;
+  sampleAnswer: string;
+  userAnswerText?: string | null;
+}
+
 export interface StructuredQuestion {
   id: string;
   type: "structured";
   question: string;
   marks: number;
+  subQuestions?: SubQuestion[];
   sampleAnswer: string;
   userAnswerText: string | null;
   selfGradedScore: number | null;
@@ -64,6 +73,12 @@ export interface AIGeneratedQuestion {
   answer_key?: string;
   explanation?: string;
   section?: string;
+  sub_questions?: {
+    id: string; // e.g. "a", "b"
+    question: string;
+    marks: number;
+    answer_key: string;
+  }[];
 }
 
 // AI reponse questions object (MCQ Mode)
@@ -86,6 +101,12 @@ export interface PastYearModeQuestion {
   options?: string[] | null;
   answer_key: string;
   explanation?: string;
+  sub_questions?: {
+    id: string; // e.g. "a", "b"
+    question: string;
+    marks: number;
+    answer_key: string;
+  }[];
 }
 
 export type AIQuestionFormat = MCQModeQuestion | PastYearModeQuestion | AIGeneratedQuestion;
@@ -176,12 +197,20 @@ export function transformAIQuizToFirestore(
           explanation: getMcqExplanation(pastYearQuestion, pastYearQuestion.answer_key),
         } as MCQQuestion;
       } else if (pastYearQuestion.type === "structured") {
+        const subQuestions = pastYearQuestion.sub_questions?.map(sq => ({
+            id: sq.id,
+            question: sq.question,
+            marks: normalizePositiveMark(sq.marks, 1),
+            sampleAnswer: sq.answer_key
+        }));
+
         return {
           id: baseId,
           type: "structured",
           question: questionText,
           marks: normalizePositiveMark((pastYearQuestion as AIGeneratedQuestion).marks, 3),
           sampleAnswer: pastYearQuestion.answer_key,
+          subQuestions: subQuestions,
           userAnswerText: null,
           selfGradedScore: null,
         } as StructuredQuestion;
@@ -351,6 +380,19 @@ export async function restartQuizAttempt(quizId: string): Promise<void> {
           ...question,
           userSelectedIndex: null,
           isCorrect: null,
+        };
+      }
+
+      if (question.type === "structured" && question.subQuestions) {
+        const resetSubQuestions = question.subQuestions.map((sq) => ({
+          ...sq,
+          userAnswerText: null,
+        }));
+        return {
+          ...question,
+          userAnswerText: null,
+          selfGradedScore: null,
+          subQuestions: resetSubQuestions,
         };
       }
 

@@ -377,15 +377,75 @@ function StructuredViewer({
   question: StructuredQuestion;
 }) {
   const [userAnswer, setUserAnswer] = useState(question.userAnswerText || "");
+  const [subAnswers, setSubAnswers] = useState<Record<string, string>>({});
   const [showSample, setShowSample] = useState(false);
   const [selfGrade, setSelfGrade] = useState<number | null>(
     question.selfGradedScore
   );
 
+  useEffect(() => {
+    if (question.subQuestions) {
+        const initialSubAnswers: Record<string, string> = {};
+        question.subQuestions.forEach(sq => {
+            if (sq.userAnswerText) {
+                initialSubAnswers[sq.id] = sq.userAnswerText;
+            }
+        });
+        setSubAnswers(initialSubAnswers);
+    }
+  }, [question]);
+
   const handleSaveAnswer = async () => {
     console.log("User answer saved:", userAnswer);
     // TODO: Update Firestore in real app
   };
+
+  const handleSubAnswerChange = (id: string, value: string) => {
+      setSubAnswers(prev => ({ ...prev, [id]: value }));
+  }
+
+  if (question.subQuestions && question.subQuestions.length > 0) {
+      return (
+          <div className="space-y-6">
+              {question.subQuestions.map((sq) => (
+                  <div key={sq.id} className="border-l-4 border-blue-200 pl-4 py-2">
+                       <div className="flex justify-between items-baseline mb-2">
+                           <h3 className="font-semibold text-lg">{sq.id}) {sq.question}</h3>
+                           <span className="text-sm text-gray-500">Marks: {sq.marks}</span>
+                       </div>
+                       
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium mb-2">Your Answer:</label>
+                            <textarea
+                            value={subAnswers[sq.id] || ""}
+                            onChange={(e) => handleSubAnswerChange(sq.id, e.target.value)}
+                            // onBlur={handleSaveAnswer} // TODO: Handle sub-answer save
+                            placeholder={`Answer for ${sq.id}...`}
+                            className="w-full p-3 border rounded-lg focus:outline-none focus:border-blue-500 text-sm"
+                            rows={3}
+                            />
+                        </div>
+
+                         <div className="mb-2">
+                            <button
+                            onClick={() => setShowSample(!showSample)}
+                            className="text-sm text-blue-600 hover:text-blue-800 underline"
+                            >
+                            {showSample ? "Hide" : "Show"} Sample Answer for ({sq.id})
+                            </button>
+                        </div>
+                        
+                        {showSample && (
+                            <div className="bg-blue-50 border border-blue-100 rounded p-3 mb-2 text-sm">
+                                <p className="font-semibold text-gray-700">Sample Answer:</p>
+                                <p>{sq.sampleAnswer}</p>
+                            </div>
+                        )}
+                  </div>
+              ))}
+          </div>
+      )
+  }
 
   return (
     <div>
