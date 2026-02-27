@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import { ConfirmationModal } from '@/components/ui/confirmation-modal';
 import {
   getUserFilesByType,
   getUserStorageStatsFromFirestore,
@@ -32,6 +33,20 @@ export default function FirebaseTestPage() {
   const [stats, setStats] = useState<{ totalFiles: number; totalSize: number; pdfCount: number; imageCount: number; textCount: number } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Modal states
+  const [alertState, setAlertState] = useState<{ isOpen: boolean; title: string; message: string; variant?: 'info' | 'destructive' }>({ 
+    isOpen: false, 
+    title: '', 
+    message: '', 
+    variant: 'info' 
+  });
+  
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; path: string; name: string } | null>(null);
+
+  const showAlert = (title: string, message: string, variant: 'info' | 'destructive' = 'info') => {
+    setAlertState({ isOpen: true, title, message, variant });
+  };
+
   const refreshFiles = async (activeUserId: string) => {
     try {
       const [pdfList, imageList, documentList, storageStats] = await Promise.all([
@@ -49,21 +64,25 @@ export default function FirebaseTestPage() {
     }
   };
 
-  const handleDeleteFile = async (fileId: string, storagePath: string, fileName: string) => {
-    if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
-    if (!userId) return;
+  const handleDeleteFile = (fileId: string, storagePath: string, fileName: string) => {
+    setFileToDelete({ id: fileId, path: storagePath, name: fileName });
+  };
+
+  const processDeleteFile = async () => {
+    if (!fileToDelete || !userId) return;
     
-    setDeleting(fileId);
+    setDeleting(fileToDelete.id);
     try {
-      await deleteFile(fileId, storagePath);
+      await deleteFile(fileToDelete.id, fileToDelete.path);
       await refreshFiles(userId);
-      alert('File deleted successfully!');
+      showAlert('Success', 'File deleted successfully!');
     } catch (error: unknown) {
       if (error instanceof Error) {
-        alert(`Failed to delete file: ${error.message}`);
+        showAlert('Error', `Failed to delete file: ${error.message}`, 'destructive');
       }
     } finally {
       setDeleting(null);
+      setFileToDelete(null);
     }
   };
 
@@ -124,7 +143,7 @@ export default function FirebaseTestPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!userId) {
-      alert('Please sign in before uploading.');
+      showAlert('Authorization', 'Please sign in before uploading.', 'destructive');
       return;
     }
 
@@ -145,13 +164,13 @@ export default function FirebaseTestPage() {
       }
 
       const result = await response.json();
-      alert(`✅ File uploaded and extracted!\nURL: ${result.uploadResult.url}`);
+      showAlert('Success', `✅ File uploaded and extracted!\nURL: ${result.uploadResult.url}`);
       
       // Refresh file list
       await refreshFiles(userId);
     } catch (error: unknown) {
       if (error instanceof Error) {
-        alert(`❌ Upload failed: ${error.message}`);
+        showAlert('Error', `❌ Upload failed: ${error.message}`, 'destructive');
       }
     } finally {
       setUploading(false);
@@ -360,6 +379,28 @@ export default function FirebaseTestPage() {
           )}
         </div>
       </div>
+
+       {/* Modals */}
+       <ConfirmationModal
+        isOpen={alertState.isOpen}
+        onOpenChange={(open) => setAlertState({ ...alertState, isOpen: open })}
+        title={alertState.title}
+        message={alertState.message}
+        variant={alertState.variant}
+        type="alert"
+        onConfirm={() => {}}
+      />
+      
+      <ConfirmationModal
+        isOpen={!!fileToDelete}
+        onOpenChange={(open) => !open && setFileToDelete(null)}
+        title="Delete File"
+        message={`Are you sure you want to delete "${fileToDelete?.name}"?`}
+        confirmText="Delete"
+        variant="destructive"
+        onConfirm={processDeleteFile}
+        onCancel={() => setFileToDelete(null)}
+      />
     </div>
   );
 }

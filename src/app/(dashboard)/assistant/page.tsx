@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/context/AuthContext";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
 
 // --- Types ---
 type MaterialType = "PDF" | "Note" | "Document" | "Folder" | "IMG" | "PPT" | "TXT" | "DOCX";
@@ -74,6 +75,7 @@ const mapFolderToMaterial = (folder: any): Material => ({
 export default function AssistantPage() {
   const { userId, getIdToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   
@@ -326,9 +328,12 @@ const fetchHistory = async () => {
     }
   };
 
-  const handleClearChat = async () => {
+  const handleClearChat = () => {
+    setShowClearChatConfirm(true);
+  };
+
+  const processClearChat = async () => {
     if (!userId) return;
-    if (!confirm("Are you sure you want to clear the chat history? This cannot be undone.")) return;
 
     try {
         setIsLoading(true);
@@ -723,7 +728,16 @@ const fetchHistory = async () => {
           </Card>
         </div>
       )}
-
+      
+      <ConfirmationModal
+        isOpen={showClearChatConfirm}
+        onOpenChange={setShowClearChatConfirm}
+        title="Clear Chat History"
+        message="Are you sure you want to clear the chat history? This cannot be undone."
+        confirmText="Clear History"
+        variant="destructive"
+        onConfirm={processClearChat}
+      />
     </div>
   );
 }
