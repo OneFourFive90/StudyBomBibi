@@ -66,6 +66,13 @@ interface LibraryFile {
   folderId?: string | null;
 }
 
+interface FileApiResponse {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  folderId?: string | null;
+}
+
 interface LibraryFolder {
   id: string;
   name: string;
@@ -262,7 +269,7 @@ export default function GeneratorPage() {
       }
 
       const filesData = await filesRes.json();
-      const files = (filesData.files || []).map((file: any) => ({
+      const files = (filesData.files || []).map((file: FileApiResponse) => ({
         id: file.id,
         name: file.originalName,
         type: getFileTypeLabel(file.originalName, file.mimeType),
