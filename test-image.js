@@ -11,8 +11,8 @@ async function testImageAPI() {
       },
       body: JSON.stringify({
         // We use 'imagePrompt' now, and put exact text in quotes to test FLUX!
-        imagePrompt: '"image_description": "A detailed diagram of a typical animal eukaryotic cell. The outermost layer should be clearly labeled as the \'Cell Membrane\'. Prominently displayed in the center of the cell should be the \'Nucleus\', depicted as a large, spherical or oval organelle containing genetic material (chromatin/nucleolus) and enclosed by a double membrane with pores. Several \'Mitochondria\' should be visible as smaller, bean-shaped organelles with folded inner membranes (cristae) scattered throughout the cytoplasm. Other organelles like Endoplasmic Reticulum, Golgi apparatus, and Ribosomes can be present to provide context, but the emphasis should be on clearly highlighting the three primary structures mentioned (Cell Membrane, Nucleus, Mitochondria) for easy identification."'
-      }),
+        imagePrompt: '"slide_title": "Welcome to Biology!", "bullets": ["The scientific study of living organisms.", "Explores the diversity, complexity, and interconnectedness of life.", "Answers fundamental questions about our existence and the natural world."]'
+            }),
     });
 
     if (!response.ok) {

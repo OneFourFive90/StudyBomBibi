@@ -3,29 +3,41 @@ import { uploadAssetToStorage } from "@/lib/firebase/storage/uploadAssetToStorag
 
 export async function POST(req: Request) {
   try {
-    // 1. Get parameters
     const { imagePrompt, storagePath, userId } = await req.json();
 
     if (!imagePrompt) {
       return NextResponse.json({ error: "Missing imagePrompt" }, { status: 400 });
     }
+
     const sanitizedPrompt = imagePrompt.replace(/'/g, "\\'");
+    let finalPrompt = sanitizedPrompt;
 
-    // Determine if this is for storage or immediate use
-    const isForStorage = storagePath && userId;
+    // 1. Logic to extract the last two words of the slide_title
+    let topicExtension = "";
+    try {
+      // We parse the string into a real object to safely access the title
+      const promptObj = JSON.parse(imagePrompt);
+      const title = promptObj.slide_title || "";
+      
+      // Split by spaces and grab the last two elements
+      const words = title.trim().split(/\s+/);
+      if (words.length >= 2) {
+        topicExtension = words.slice(-2).join(" "); // "to Biology"
+      } else {
+        topicExtension = title; // Fallback if title is only one word
+      }
+    } catch (e) {
+      // If JSON.parse fails, we skip extraction or use a fallback
+      console.error("Could not parse imagePrompt for title extraction");
+    }
 
-let finalPrompt = sanitizedPrompt;
-
-// Check if the prompt is the "JSON-style" slide prompt
-if (sanitizedPrompt.includes("slide_title") || sanitizedPrompt.includes("bullets")) {
-  // It's a Slide! Ask for a clean background ONLY.
-  finalPrompt = `Abstract, beautiful, blurred gradient, no text, background art representing the concept of: ${imagePrompt}. 
-Cinematic lighting, dark moody aesthetic, empty negative space for copy.
-ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO FONTS, NO WRITING, pure abstract scene.`;
-} else {
-  // It's a Diagram! Use the original description.
-  finalPrompt = `${sanitizedPrompt}, highly detailed educational diagram, 16:9 aspect ratio, professional layout.`;
-}
+    // 2. Check if the prompt is the "JSON-style" slide prompt
+    if (sanitizedPrompt.includes("slide_title") || sanitizedPrompt.includes("bullets")) {
+      // Use the extracted topicExtension variable at the end of the string
+      finalPrompt = `A premium, tech, abstract 16*9 slide background related to ${topicExtension}. Dark elegant colors, corporate tech aesthetic, empty negative space. Absolutely zero text, no letters, no words, no fonts, purely abstract background art`;
+    } else {
+      finalPrompt = `${sanitizedPrompt}, highly detailed educational diagram, 16:9 aspect ratio, professional layout.`;
+    }
     // 3. The HuggingFace Endpoint
 
     const url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
@@ -58,7 +70,7 @@ ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO FONTS, NO WRITING, pure abstract sc
     const buffer = Buffer.from(arrayBuffer);
 
     // If no storage path, return Base64 (backward compatibility)
-    if (!isForStorage) {
+    if (!storagePath) {
       const base64Image = buffer.toString("base64");
       const fullImageString = `data:image/jpeg;base64,${base64Image}`;
       return NextResponse.json({ imageUrl: fullImageString });
