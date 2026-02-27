@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { FirebaseError } from "firebase/app";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function LoginPage() {
   const { signInWithGoogle, signIn, signUp, user, loading } = useAuth();
@@ -82,7 +83,10 @@ export default function LoginPage() {
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="flex min-h-screen items-center justify-center bg-background relative">
+      <div className="absolute bottom-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="bg-primary text-primary-foreground p-8 rounded shadow-md w-full max-w-sm">
         <h2 className="text-2xl font-bold mb-6 text-center">
           {isSignUp ? "Create Account" : "Sign In"}
@@ -103,7 +107,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email"
-              className="w-full"
+              className="w-full bg-primary-foreground text-primary placeholder:text-primary/70"
               disabled={isLoading}
             />
           </div>
@@ -115,14 +119,14 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter your password"
-              className="w-full"
+              className="w-full bg-primary-foreground text-primary placeholder:text-primary/70"
               disabled={isLoading}
             />
           </div>
 
           <Button
             type="submit"
-            className="w-full bg-foreground text-primary hover:bg-muted hover:text-muted-foreground"
+            className="w-full bg-secondary text-secondary-foreground hover:bg-foreground hover:text-background transition-colors"
             disabled={isLoading}
           >
             {isLoading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
@@ -157,7 +161,7 @@ export default function LoginPage() {
         <Button 
           variant="ghost" 
           onClick={handleGoogleLogin}
-          className="w-full bg-foreground flex items-center justify-center gap-2 hover:bg-muted hover:text-muted-foreground"
+          className="w-full bg-primary-foreground flex items-center justify-center gap-2 text-primary hover:bg-muted hover:text-muted-foreground"
           disabled={isLoading}
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="h-5 w-5">
