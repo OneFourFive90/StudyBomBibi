@@ -82,10 +82,8 @@ export default function Home() {
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               <Card className="group hover:shadow-lg hover:-translate-y-1 transition-all duration-300 border-muted-foreground/20">
                 <CardHeader>
-                  <div className="bg-blue-100 dark:bg-blue-900/30 w-12 h-12 rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <BookOpen className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <CardTitle className="text-xl">Personalized AI Course</CardTitle>
+                  <BookOpen className="h-10 w-10 mb-2 text-primary" />
+                  <CardTitle>AI Courses</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-sm text-muted-foreground/80 leading-relaxed">

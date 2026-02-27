@@ -456,7 +456,7 @@ export default function ExamPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold">{quiz.title}</h1>
-            <p className="text-muted-foreground">{quiz.mode === "mcq" ? "MCQ Quiz" : "Past Year Paper"}</p>
+            <p className="text-muted-foreground">{quiz.mode === "mcq" ? "MCQ Quiz" : "Mock Exam"}</p>
           </div>
         </div>
         

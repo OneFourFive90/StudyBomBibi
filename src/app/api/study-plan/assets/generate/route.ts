@@ -1,200 +1,229 @@
-import { NextResponse } from "next/server";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/firebase";
-import { generateVideoAsset } from "@/lib/ai/generateVideoAsset";
-import { generateImageAsset } from "@/lib/ai/generateImageAsset";
-import { uploadStudyPlanAsset } from "@/lib/firebase/storage/uploadStudyPlanAsset";
+import { NextRequest, NextResponse } from "next/server";
+import { generateStoragePath, getAssetsByPlan } from "@/lib/firebase/firestore/study-plan-assets/assetGenerationWorkflow";
 import {
-  getAssetById,
   markAssetGenerating,
   markAssetReady,
   markAssetFailed,
   updateActivityAssetUrl,
 } from "@/lib/firebase/firestore/study-plan-assets/updateStudyPlanAIAsset";
-import { StoredActivity } from "@/lib/firebase/firestore/study-plan/saveStudyPlanToFirestore";
 
 /**
  * POST /api/study-plan/assets/generate
  * 
- * Generates a single asset (video/image) for a study plan activity
- * 
- * Body: { assetId: string }
- * 
- * Flow:
- * 1. Get asset doc from studyplanAIAssets
- * 2. Get activity data from dailyModule
- * 3. Generate video/image based on type
- * 4. Upload to Firebase Storage
- * 5. Update asset doc and activity with downloadUrl
+ * Internal API that generates all AI assets for a study plan:
+ * - Calls /api/image for slide_image and single_image
+ * - Calls /api/tts for script_audio
+ * - Updates asset status and activity URLs
  */
-export async function POST(req: Request) {
-  let assetId: string | undefined;
-
+export async function POST(request: NextRequest) {
   try {
-    const body = await req.json();
-    assetId = body.assetId;
+    const body = await request.json();
+    const { planId, userId } = body;
 
-    // ============ VALIDATION ============
-    if (!assetId || typeof assetId !== "string") {
+    if (!planId || !userId) {
       return NextResponse.json(
-        { error: "Missing required field: 'assetId'" },
+        { error: "Missing required fields: planId, userId" },
         { status: 400 }
       );
     }
 
-    // ============ STEP 1: GET ASSET DOCUMENT ============
-    console.log(`[AssetGen] Processing asset: ${assetId}`);
+    console.log(`[AssetGen] Starting generation for plan ${planId}`);
 
-    const asset = await getAssetById(assetId);
-    if (!asset) {
-      return NextResponse.json(
-        { error: "Asset not found" },
-        { status: 404 }
-      );
-    }
+    // Get assets to generate for this plan
+    const allAssets = await getAssetsByPlan(planId);
+    const pendingAssets = allAssets.filter(asset => asset.status === "pending");
 
-    // Check if already processed
-    if (asset.status === "ready") {
+    console.log(`[AssetGen] Found ${pendingAssets.length} pending assets`);
+
+    if (pendingAssets.length === 0) {
       return NextResponse.json({
         success: true,
-        message: "Asset already generated",
-        downloadUrl: asset.downloadUrl,
+        message: "No pending assets to generate",
+        processed: 0,
+        results: []
       });
     }
 
-    if (asset.status === "generating") {
-      return NextResponse.json(
-        { error: "Asset is currently being generated" },
-        { status: 409 }
-      );
-    }
+    const results = [];
 
-    // ============ STEP 2: GET ACTIVITY DATA ============
-    const moduleRef = doc(db, "plans", asset.planId, "dailyModule", asset.dailyModuleId);
-    const moduleDoc = await getDoc(moduleRef);
+    // Process each asset
+    for (const asset of pendingAssets) {
+      try {
+        console.log(`[AssetGen] Processing asset ${asset.id} (${asset.assetType})`);
+        
+        // Mark as generating
+        await markAssetGenerating(asset.id);
 
-    if (!moduleDoc.exists()) {
-      return NextResponse.json(
-        { error: "Daily module not found" },
-        { status: 404 }
-      );
-    }
+        // Generate storage path
+        const storagePath = generateStoragePath(
+          userId,
+          asset.planId,
+          asset.assetType,
+          asset.activityIndex,
+          asset.segmentIndex
+        );
 
-    const moduleData = moduleDoc.data();
-    const activity: StoredActivity = moduleData.activities[asset.activityIndex];
+        let downloadUrl: string;
 
-    if (!activity) {
-      return NextResponse.json(
-        { error: "Activity not found at specified index" },
-        { status: 404 }
-      );
-    }
+        // Generate asset based on type
+        if (asset.assetType === "slide_image" || asset.assetType === "single_image") {
+          // Call image generation API
+          const imageResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imagePrompt: asset.prompt || "Generate relevant educational image",
+              storagePath,
+              userId,
+            }),
+          });
 
-    // ============ STEP 3: MARK AS GENERATING ============
-    await markAssetGenerating(assetId);
-    console.log(`[AssetGen] Marked as generating: ${assetId}`);
+          if (!imageResponse.ok) {
+            const errorText = await imageResponse.text();
+            throw new Error(`Image generation failed: ${errorText}`);
+          }
 
-    // ============ STEP 4: GENERATE ASSET ============
-    let buffer: Buffer;
-    let mimeType: string;
-    let extension: string;
+          const imageResult = await imageResponse.json();
+          downloadUrl = imageResult.downloadUrl;
 
-    try {
-      if (asset.type === "video") {
-        if (!activity.video_segments || activity.video_segments.length === 0) {
-          throw new Error("Video activity missing video_segments");
+        } else if (asset.assetType === "script_audio") {
+          // Call TTS API
+          const ttsResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/tts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              script: asset.prompt || "No script provided",
+              storagePath,
+              userId,
+            }),
+          });
+
+          if (!ttsResponse.ok) {
+            const errorText = await ttsResponse.text();
+            throw new Error(`TTS generation failed: ${errorText}`);
+          }
+
+          const ttsResult = await ttsResponse.json();
+          downloadUrl = ttsResult.downloadUrl;
+
+        } else {
+          throw new Error(`Unknown asset type: ${asset.assetType}`);
         }
 
-        const result = await generateVideoAsset({
-          title: activity.title,
-          video_segments: activity.video_segments,
+        // Mark asset as ready
+        await markAssetReady(asset.id, storagePath, downloadUrl);
+
+        // Update activity with asset URL
+        await updateActivityAssetUrl(
+          asset.planId,
+          asset.dailyModuleId,
+          asset.activityIndex,
+          asset.id,
+          downloadUrl
+        );
+
+        console.log(`[AssetGen] ✅ Generated asset ${asset.id}`);
+
+        results.push({
+          assetId: asset.id,
+          assetType: asset.assetType,
+          segmentIndex: asset.segmentIndex,
+          success: true,
+          downloadUrl,
         });
 
-        buffer = result.buffer;
-        mimeType = result.mimeType;
-        extension = result.extension;
-      } else if (asset.type === "image") {
-        if (!activity.image_description) {
-          throw new Error("Image activity missing image_description");
-        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        console.error(`[AssetGen] ❌ Failed to generate asset ${asset.id}:`, errorMessage);
 
-        const result = await generateImageAsset({
-          title: activity.title,
-          image_description: activity.image_description,
+        // Mark asset as failed
+        await markAssetFailed(asset.id, errorMessage);
+
+        results.push({
+          assetId: asset.id,
+          assetType: asset.assetType,
+          segmentIndex: asset.segmentIndex,
+          success: false,
+          error: errorMessage,
         });
-
-        buffer = result.buffer;
-        mimeType = result.mimeType;
-        extension = result.extension;
-      } else {
-        throw new Error(`Unknown asset type: ${asset.type}`);
       }
-    } catch (genError) {
-      // Mark as failed if generation fails
-      const errorMessage = genError instanceof Error ? genError.message : String(genError);
-      await markAssetFailed(assetId, errorMessage);
-      console.error(`[AssetGen] Generation failed: ${errorMessage}`);
-      
-      return NextResponse.json(
-        { error: "Asset generation failed", details: errorMessage },
-        { status: 500 }
-      );
     }
 
-    // ============ STEP 5: UPLOAD TO STORAGE ============
-    console.log(`[AssetGen] Uploading to storage...`);
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
 
-    const uploadResult = await uploadStudyPlanAsset({
-      ownerId: asset.ownerId,
-      planId: asset.planId,
-      assetId: asset.id,
-      buffer,
-      mimeType,
-      extension,
-      type: asset.type,
-    });
-
-    // ============ STEP 6: UPDATE FIRESTORE ============
-    console.log(`[AssetGen] Updating Firestore...`);
-
-    // Update asset document
-    await markAssetReady(assetId, uploadResult.storagePath, uploadResult.downloadUrl);
-
-    // Update activity with asset URL
-    await updateActivityAssetUrl(
-      asset.planId,
-      asset.dailyModuleId,
-      asset.activityIndex,
-      uploadResult.downloadUrl
-    );
-
-    console.log(`[AssetGen] Successfully generated asset: ${assetId}`);
+    console.log(`[AssetGen] Completed: ${successCount} success, ${failCount} failed`);
 
     return NextResponse.json({
       success: true,
-      assetId,
-      type: asset.type,
-      storagePath: uploadResult.storagePath,
-      downloadUrl: uploadResult.downloadUrl,
-      message: "Asset generated successfully",
+      processed: results.length,
+      successCount,
+      failCount,
+      results,
+      message: `Generated ${successCount}/${results.length} assets successfully`,
     });
 
-  } catch (error: unknown) {
-    console.error("[AssetGen] Error:", error);
-    
-    // Try to mark as failed if we have the assetId
-    if (assetId) {
-      try {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        await markAssetFailed(assetId, errorMessage);
-      } catch {
-        // Ignore errors when marking as failed
-      }
+  } catch (error) {
+    console.error("[AssetGen] Critical error:", error);
+    return NextResponse.json(
+      { 
+        error: "Asset generation failed", 
+        details: error instanceof Error ? error.message : "Unknown error"
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET /api/study-plan/assets/generate
+ * 
+ * Get generation status for a plan
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const planId = searchParams.get("planId");
+
+    if (!planId) {
+      return NextResponse.json(
+        { error: "Missing required parameter: planId" },
+        { status: 400 }
+      );
     }
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const assets = await getAssetsByPlan(planId);
+    
+    const statusCounts = {
+      pending: assets.filter(a => a.status === "pending").length,
+      generating: assets.filter(a => a.status === "generating").length,
+      ready: assets.filter(a => a.status === "ready").length,
+      failed: assets.filter(a => a.status === "failed").length,
+    };
+
+    const progress = assets.length > 0 ? (statusCounts.ready / assets.length) * 100 : 100;
+
+    return NextResponse.json({
+      planId,
+      totalAssets: assets.length,
+      progress: Math.round(progress),
+      statusCounts,
+      isComplete: statusCounts.pending === 0 && statusCounts.generating === 0,
+      assets: assets.map(asset => ({
+        id: asset.id,
+        assetType: asset.assetType,
+        status: asset.status,
+        activityIndex: asset.activityIndex,
+        segmentIndex: asset.segmentIndex,
+        downloadUrl: asset.downloadUrl,
+        errorMessage: asset.errorMessage,
+      }))
+    });
+
+  } catch (error) {
+    console.error("[AssetGen] Status check failed:", error);
     return NextResponse.json(
-      { error: "Failed to generate asset", details: errorMessage },
+      { error: "Failed to get generation status" },
       { status: 500 }
     );
   }

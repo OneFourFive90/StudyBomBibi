@@ -57,8 +57,17 @@ export interface AIStudyPlanResponse {
 
 // Activity stored in Firestore (with optional asset URLs)
 export interface StoredActivity extends AIActivity {
-  assetUrl?: string; // For video/image after generation
-  assetId?: string;  // Reference to studyplanAIAssets document
+  assetStatus?: "pending" | "generating" | "ready" | "failed";
+  assets?: ActivityAsset[]; // References to individual assets
+  isCompleted?: boolean; // Completion status for this activity
+}
+
+// Individual asset reference within an activity
+export interface ActivityAsset {
+  assetId: string;
+  type: "slide_image" | "script_audio" | "single_image";
+  segmentIndex?: number; // For video segments
+  url?: string; // Download URL when ready
 }
 
 // Daily module document in subcollection
@@ -145,19 +154,66 @@ export async function saveStudyPlanToFirestore(
     const storedActivities: StoredActivity[] = scheduleDay.activities.map(
       (activity, index) => {
         const storedActivity: StoredActivity = { ...activity };
+        const assets: ActivityAsset[] = [];
 
-        // Create pending asset entry for video/image activities
-        if (activity.type === "video" || activity.type === "image") {
-          const assetId = addAssetToBatch(batch, {
+        // Set completion status for each activity (default: false)
+        storedActivity.isCompleted = false;
+
+        if (activity.type === "video" && activity.video_segments) {
+          // Create assets for each video segment (image + audio)
+          activity.video_segments.forEach((segment, segmentIndex) => {
+            // Create slide image asset
+            const slideImageAssetId = addAssetToBatch(batch, {
+              ownerId,
+              planId,
+              dailyModuleId,
+              activityIndex: index,
+              assetType: "slide_image",
+              segmentIndex,
+              prompt: `Slide: ${segment.slide_title}. Bullets: ${segment.bullets.join(", ")}`,
+            }, now);
+            pendingAssetIds.push(slideImageAssetId);
+            assets.push({
+              assetId: slideImageAssetId,
+              type: "slide_image",
+              segmentIndex,
+            });
+
+            // Create script audio asset
+            const scriptAudioAssetId = addAssetToBatch(batch, {
+              ownerId,
+              planId,
+              dailyModuleId,
+              activityIndex: index,
+              assetType: "script_audio",
+              segmentIndex,
+              prompt: segment.script,
+            }, now);
+            pendingAssetIds.push(scriptAudioAssetId);
+            assets.push({
+              assetId: scriptAudioAssetId,
+              type: "script_audio",
+              segmentIndex,
+            });
+          });
+          storedActivity.assetStatus = "pending";
+          storedActivity.assets = assets;
+        } else if (activity.type === "image" && activity.image_description) {
+          // Create single image asset
+          const imageAssetId = addAssetToBatch(batch, {
             ownerId,
             planId,
             dailyModuleId,
             activityIndex: index,
-            type: activity.type,
+            assetType: "single_image",
+            prompt: activity.image_description,
           }, now);
-          
-          pendingAssetIds.push(assetId);
-          storedActivity.assetId = assetId;
+          pendingAssetIds.push(imageAssetId);
+          storedActivity.assetStatus = "pending";
+          storedActivity.assets = [{
+            assetId: imageAssetId,
+            type: "single_image",
+          }];
         }
 
         return storedActivity;
