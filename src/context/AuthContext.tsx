@@ -48,7 +48,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  const userId = user?.uid || process.env.NEXT_PUBLIC_TEST_USER_ID || null;
+  const userId = user?.uid ?? null;
 
   const signInWithGoogle = async () => {
     try {

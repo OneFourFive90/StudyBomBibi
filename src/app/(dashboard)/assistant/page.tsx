@@ -1,218 +1,384 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardTitle, CardHeader, CardContent } from "@/components/ui/card";
-import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar } from "lucide-react";
+import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, Trash, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { useAuth } from "@/context/AuthContext";
+import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { SaveToNoteModal } from "@/components/library/SaveToNoteModal";
+import { useLibraryActions } from "@/lib/library/actions";
 
 // --- Types ---
 type MaterialType = "PDF" | "Note" | "Document" | "Folder" | "IMG" | "PPT" | "TXT" | "DOCX";
 
 interface Material {
   id: string;
-  type: MaterialType;
+  type: MaterialType; // mapped from file extension
   title: string;
   author?: string;
   content?: string; 
   tag?: string;
   parentId: string | null; // null means root directory
+  attachedFileIds?: string[]; // For notes that have attached files/sources
 }
 
-interface Message {
-  role: "assistant" | "user";
+interface ChatMessage {
+  id?: string;
+  role: "user" | "model"; // Internal logic uses 'model', UI maps to 'assistant'
   content: string;
-  sources?: Material[];
+  attachedFileIds?: string[];
+  sources?: Material[]; // For UI display
 }
 
-interface ChatSession {
-  id: string;
-  title: string;
-  createdAt: Date;
-  messages: Message[];
+interface ApiFileItem {
+    id: string;
+    originalName?: string;
+    folderId?: string | null;
+    content?: string;
+    type?: string;
+    attachedFileIds?: string[];
 }
 
+interface ApiFolderItem {
+    id: string;
+    name?: string;
+}
 
-// --- Mock Library Data ---
-// Combining existing mocks with structure from Library page
-const MOCK_LIBRARY_ITEMS: Material[] = [
-  // Folders
-  { id: "1", type: "Folder", title: "Study Resources", parentId: null, author: "System" },
-  { id: "2", type: "Folder", title: "Project Docs", parentId: null, author: "Team" },
-  { id: "3", type: "Folder", title: "Past Years", parentId: null, author: "System" },
-  
-  // Files in Root
-  { 
-    id: "lib1", 
-    title: "Lecture 1: React Fundamentals.pdf", 
-    type: "PDF", 
-    parentId: null,
-    content: "<h3>React Fundamentals</h3><p>React is a JavaScript library for building user interfaces.</p><ul><li><strong>Components:</strong> Building blocks of UI.</li><li><strong>JSX:</strong> Syntax extension for JavaScript.</li><li><strong>Props:</strong> Inputs to components.</li><li><strong>State:</strong> Internal data managed by components.</li></ul>"
-  },
-  { id: "lib2", title: "Advanced State Management.docx", type: "DOCX", parentId: null },
+interface ApiHistoryItem {
+    id?: string;
+    role: "user" | "model";
+    content: string;
+    attachedFileIds?: string[];
+}
 
-  // Files in Study Resources (id: 1)
-  { id: "lib3", title: "React Hooks Cheat Sheet.png", type: "IMG", parentId: "1" },
-  { id: "lib4", title: "Week 3 - Component Lifecycle.pptx", type: "PPT", parentId: "1" },
-  { id: "4", type: "Note", title: "React Hooks Cheat Sheet (Note)", author: "Self", parentId: "1" },
-  { id: "5", type: "Document", title: "System Design Interview Guide", author: "Alex Xu", tag: "System Design", parentId: "1" },
+// Convert API file item to Material
+const mapFileToMaterial = (file: ApiFileItem): Material => {
+    // simple extension check
+    const name = file.originalName || "Unknown";
+    const ext = name.split('.').pop()?.toLowerCase();
+    
+    let type: MaterialType = "Document";
+    if (ext === "pdf") type = "PDF";
+    else if (ext === "txt") type = "TXT";
+    else if (ext === "docx") type = "DOCX";
+    else if (ext === "pptx") type = "PPT";
+    else if (["jpg", "jpeg", "png", "gif"].includes(ext || "")) type = "IMG";
+    else if (file.type === "note") type = "Note"; // if api returns type
 
-  // Files in Project Docs (id: 2)
-  { id: "lib5", title: "Project Guidelines.pdf", type: "PDF", parentId: "2" },
-  { id: "lib6", title: "Mid-term Review Notes.txt", type: "TXT", parentId: "2" },
+    return {
+        id: file.id,
+        type,
+        title: name,
+        parentId: file.folderId || null,
+        author: "Unknown", // API doesn't seem to return author yet
+        content: file.content,
+        attachedFileIds: file.attachedFileIds || []
+    };
+};
 
-   // Files in Past Years (id: 3)
-   { id: "lib7", title: "2024 Past Year Paper.pdf", type: "PDF", parentId: "3" },
-   { id: "lib8", title: "2023 Mock Exam.docx", type: "DOCX", parentId: "3" },
-   
-   // Specific for Assistant Demo
-   { 
-     id: "recursion_note", 
-     title: "Recursion & Algorithms.note", 
-     type: "Note", 
-     parentId: "1",
-     content: "<h3>Understanding Recursion</h3><p>Recursion is a programming technique where a function calls itself directly or indirectly.</p><ul><li><strong>Base Case:</strong> The condition under which the function stops calling itself.</li><li><strong>Recursive Step:</strong> The part where the function calls itself with a modified input.</li></ul><p>Example: Factorial calculation.</p><code>function factorial(n) { if (n === 0) return 1; return n * factorial(n - 1); }</code>"
-   }
-];
+const mapFolderToMaterial = (folder: ApiFolderItem): Material => ({
+    id: folder.id,
+    type: "Folder",
+    title: folder.name || "Untitled Folder",
+    parentId: null, // Folders in this system seem flat or parentId managed elsewhere? The test bot uses folderId on files.
+    author: "System"
+});
 
-const MOCK_SESSIONS: ChatSession[] = [
-  {
-    id: "session-1",
-    title: "Understanding Recursion",
-    createdAt: new Date("2024-02-23T10:00:00"),
-    messages: [
-      {
-        role: "assistant",
-        content: "Hello! checking in. How can I help you with your studies today?"
-      },
-      {
-        role: "user",
-        content: "Can you explain the concept of Recursion?"
-      },
-      {
-        role: "assistant",
-        content: "Recursion is a method where the solution to a problem depends on solutions to smaller instances of the same problem. In programming, it's when a function calls itself.",
-        sources: [
-          MOCK_LIBRARY_ITEMS.find(item => item.id === "recursion_note")!
-        ]
-      }
-    ]
-  },
-  {
-    id: "session-2",
-    title: "React Components",
-    createdAt: new Date("2024-02-22T14:30:00"),
-    messages: [
-      {
-        role: "assistant",
-        content: "Hi there! Ready to dive into React?"
-      },
-      {
-        role: "user",
-        content: "What are the main differences between functional and class components?",
-        sources: [
-            MOCK_LIBRARY_ITEMS.find(item => item.id === "lib1")!
-        ]
-      }
-    ]
-  }
-];
 
 export default function AssistantPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>(MOCK_SESSIONS);
-  const [currentSessionId, setCurrentSessionId] = useState<string>("session-1");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const nextSessionIdRef = useRef(3);
+  const { userId, getIdToken } = useAuth();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
+  const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // File System State
+  const [libraryItems, setLibraryItems] = useState<Material[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<Material[]>([]);
+  
+  // UI State
+  const [isLibraryPanelOpen, setIsLibraryPanelOpen] = useState(false);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
+  
+  const contextProcessedRef = useRef(false);
+  const tempContextMessagesRef = useRef<ChatMessage[]>([]); 
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];
-  const messages = currentSession.messages;
+  // Save Note State
+  const [isSaveNoteOpen, setIsSaveNoteOpen] = useState(false);
+  const [noteContentToSave, setNoteContentToSave] = useState("");
+  const [noteAttachedFileIds, setNoteAttachedFileIds] = useState<string[]>([]);
 
-  const handleNewChat = () => {
-    const nextSessionId = `session-${nextSessionIdRef.current}`;
-    nextSessionIdRef.current += 1;
-    const newSession: ChatSession = {
-      id: nextSessionId,
-      title: "New Chat",
-      createdAt: new Date(),
-      messages: [
-        {
-          role: "assistant",
-          content: "Hello! How can I help you today?"
-        }
-      ]
-    };
-    setSessions([newSession, ...sessions]);
-    setCurrentSessionId(newSession.id);
+  const fetchFilesAndFolders = async () => {
+      try {
+          const token = await getIdToken();
+          const headers = { Authorization: `Bearer ${token}` };
+
+          const [filesRes, foldersRes] = await Promise.all([
+              fetch(`/api/get-files?userId=${userId}`, { headers }),
+              fetch(`/api/folders?action=get-all&userId=${userId}`, { headers })
+          ]);
+
+          let newLibraryItems: Material[] = [];
+
+          if (foldersRes.ok) {
+              const data = await foldersRes.json();
+              const folderMaterials = (data.folders || []).map(mapFolderToMaterial);
+              newLibraryItems = [...newLibraryItems, ...folderMaterials];
+          }
+
+          if (filesRes.ok) {
+              const data = await filesRes.json();
+              const fileMaterials = (data.files || []).map(mapFileToMaterial);
+              newLibraryItems = [...newLibraryItems, ...fileMaterials];
+          }
+          
+          setLibraryItems(newLibraryItems);
+      } catch (error) {
+          console.error("Failed to fetch library items:", error);
+      }
   };
 
-  const handleDeleteSession = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const newSessions = sessions.filter(s => s.id !== id);
-    if (newSessions.length === 0) {
-        handleNewChat(); // Create a new one if all deleted
-    } else {
-        setSessions(newSessions);
-        if (currentSessionId === id) {
-            setCurrentSessionId(newSessions[0].id);
+  const { createNote, actionLoading } = useLibraryActions(fetchFilesAndFolders);
+
+  // --- Data Fetching ---
+  useEffect(() => {
+    if (!userId) return;
+
+const fetchHistory = async () => {
+        try {
+            const token = await getIdToken();
+            const res = await fetch(`/api/chatbot/get-history?userId=${userId}`, { 
+                headers: { Authorization: `Bearer ${token}` } 
+            });
+            let initialMessages: ChatMessage[] = [];
+            if (res.ok) {
+                const data = await res.json();
+                initialMessages = (data.history || []).map((msg: ApiHistoryItem) => ({
+                    id: msg.id,
+                    role: msg.role,
+                    content: msg.content,
+                    attachedFileIds: msg.attachedFileIds || [],
+                }));
+            }
+            
+            // Check for sessionStorage context
+            const storedContext = sessionStorage.getItem("assistantContext");
+            if (storedContext && !contextProcessedRef.current) {
+                try {
+                    const context = JSON.parse(storedContext);
+                    const { noteContent, resultContent, sourceTitle, actionType, sourceSnippet, sourceId, sourceType } = context;
+                    
+                    const attachedFileIds = sourceId ? [sourceId] : [];
+
+                    // 1. Prepare messages
+                    let userContent = "";
+                    if (sourceSnippet) {
+                         userContent = `I have a question about this part of my note "${sourceTitle || 'Untitled'}":\n\n> "${sourceSnippet}"\n\nPlease provide a ${actionType?.toLowerCase() || 'explanation'}.`;
+                         if (!sourceId) {
+                            userContent += `\n\n---\nFull Note Context:\n${noteContent || ''}`;
+                         }
+                    } else {
+                        userContent = `Please provide a ${actionType?.toLowerCase() || 'summary'} of the attached note "${sourceTitle || 'Untitled'}".`;
+                        if (!sourceId) {
+                            userContent = `Here is the content of my note "${sourceTitle || 'Untitled'}":\n\n${noteContent || ''}\n\nPlease provide a ${actionType?.toLowerCase() || 'summary'} of this note.`;
+                        }
+                    }
+                    
+                    const aiContent = resultContent || '';
+                    
+                    // 2. Save this interaction to history immediately
+                    // This creates a permanent record so the AI "remembers" this context for the next turn
+                    fetch("/api/chatbot/save-history", {
+                        method: "POST",
+                        headers: { 
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}` 
+                        },
+                        body: JSON.stringify({
+                            message: userContent,
+                            aiResponse: aiContent,
+                            attachedFileIds: attachedFileIds 
+                        })
+                    }).then(() => {
+                         sessionStorage.removeItem("assistantContext");
+                    }).catch(err => console.error("Failed to save background context", err));
+
+                    // 3. Create context messages locally
+                    const sources: Material[] = [];
+                     if (sourceId) {
+                        const newSource: Material = {
+                            id: sourceId,
+                            title: sourceTitle || "Attached Note",
+                            type: (sourceType as MaterialType) || "Note", 
+                            parentId: null,
+                        };
+                        sources.push(newSource);
+                        
+                        // Also select this file so future messages include it
+                        setSelectedFiles(prev => {
+                             if (prev.find(f => f.id === sourceId)) return prev;
+                             return [...prev, newSource];
+                        });
+                    }
+
+                    const contextUserMessage: ChatMessage = {
+                        role: "user",
+                        content: userContent,
+                        attachedFileIds: attachedFileIds, 
+                        sources: sources
+                    };
+                    
+                    const contextAiMessage: ChatMessage = {
+                        role: "model",
+                        content: aiContent,
+                        attachedFileIds: [],
+                    };
+                    
+                    // Store in ref to survive re-fetching/updates until backend has them
+                    tempContextMessagesRef.current = [contextUserMessage, contextAiMessage];
+                    contextProcessedRef.current = true;
+                    
+                } catch (e) {
+                    console.error("Failed to parse assistant context", e);
+                }
+            } 
+
+            // Clean up old temporary messages if backend has caught up, or append them if backend is behind
+            if (tempContextMessagesRef.current.length > 0) {
+                 const [tempUserMsg] = tempContextMessagesRef.current;
+                 // Check if the backend history contains this message
+                 const backendHasIt = initialMessages.some(m => m.content === tempUserMsg.content && m.role === 'user');
+                 
+                 if (backendHasIt) {
+                     // Backend has caught up!
+                     tempContextMessagesRef.current = [];
+                 } else {
+                     // Append our temporary context messages
+                     initialMessages.push(...tempContextMessagesRef.current);
+                 }
+            }
+            
+            setMessages(initialMessages);
+
+        } catch (error) {
+            console.error("Failed to fetch history:", error);
         }
+    };
+
+    fetchFilesAndFolders();
+    fetchHistory();
+    
+  }, [userId, getIdToken]);
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+
+  // --- Event Handlers ---
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isLoading) return;
+
+    const userMessageContent = inputValue.trim();
+    setInputValue("");
+    
+    // Create new message object
+    const newUserMsg: ChatMessage = {
+      role: "user",
+      content: userMessageContent,
+      attachedFileIds: selectedFiles.map(f => f.id),
+      sources: [...selectedFiles] // For UI display immediately
+    };
+
+    setMessages(prev => [...prev, newUserMsg]);
+    setIsLoading(true);
+
+    try {
+       // Format history for the API (last 20 messages)
+      const recentMessages = messages.slice(-20);
+      const historyForApi = recentMessages.map((msg) => ({
+        role: msg.role, // 'user' | 'model'
+        text: msg.content,
+      }));
+      
+      const token = await getIdToken();
+      const res = await fetch("/api/chatbot", {
+        method: "POST",
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          userId: userId || "test-user-123", // Fallback for dev
+          message: userMessageContent,
+          history: historyForApi,
+          attachedFileIds: selectedFiles.map(f => f.id),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Add AI response
+        const newAiMsg: ChatMessage = {
+            role: "model",
+            content: data.text,
+            // In a real app, the backend might return which sources it used. 
+            // For now, we assume it used the ones we sent? 
+            // Or typically AI response doesn't "attach" files effectively in same structure.
+            // We can leave sources empty or parse citations if implemented.
+        };
+        setMessages((prev) => [...prev, newAiMsg]);
+      } else {
+        console.error("Failed to send message: ", res.statusText);
+        setMessages(prev => [...prev, { role: "model", content: "Sorry, I encountered an error processing your request." }]);
+      }
+
+    } catch (error) {
+        console.error("Error sending message:", error);
+        setMessages(prev => [...prev, { role: "model", content: "Sorry, I encountered an error. Please try again." }]);
+    } finally {
+        setIsLoading(false);
     }
   };
 
-  const handleSelectSession = (id: string) => {
-      setCurrentSessionId(id);
-      // On mobile, maybe close sidebar
+  const handleClearChat = () => {
+    setShowClearChatConfirm(true);
   };
 
-  const handleSendMessage = () => {
-    if (!inputValue.trim()) return;
+  const processClearChat = async () => {
+    if (!userId) return;
 
-    const newMessage: Message = {
-      role: "user",
-      content: inputValue
-    };
-
-    // Optimistic update
-    setSessions(prev => prev.map(s => {
-      if (s.id === currentSessionId) {
-        return {
-          ...s,
-          messages: [...s.messages, newMessage]
-        };
-      }
-      return s;
-    }));
-    
-    setInputValue("");
-
-    // Simulate AI response
-    setTimeout(() => {
-        setSessions(prev => prev.map(s => {
-            if (s.id === currentSessionId) {
-                // Determine if title needs update (first user message)
-                const isFirstUserMessage = s.messages.length <= 1;
-                const updatedTitle = isFirstUserMessage ? newMessage.content.slice(0, 30) + (newMessage.content.length > 30 ? "..." : "") : s.title;
-                
-                return {
-                    ...s,
-                    title: updatedTitle,
-                    messages: [...s.messages, newMessage, {
-                        role: "assistant",
-                        content: "I'm a simulated AI response. In a real app, this would call an API."
-                    }]
-                };
-            }
-            return s;
-        }));
-    }, 1000);
+    try {
+        setIsLoading(true);
+        const token = await getIdToken();
+        const res = await fetch(`/api/chatbot/delete-history?userId=${userId}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (res.ok) {
+            setMessages([]);
+            setInputValue("");
+        } else {
+            console.error("Failed to clear chat");
+        }
+    } catch (error) {
+        console.error("Error clearing chat:", error);
+    } finally {
+        setIsLoading(false);
+    }
   };
-  
-  const [selectedFiles, setSelectedFiles] = useState<Material[]>([]);
-  const [isLibraryPanelOpen, setIsLibraryPanelOpen] = useState(false);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [inputValue, setInputValue] = useState("");
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewMaterial, setPreviewMaterial] = useState<Material | null>(null);
 
   const toggleLibraryFile = (file: Material) => {
     setSelectedFiles(prev => {
@@ -225,10 +391,19 @@ export default function AssistantPage() {
     });
   };
 
-  const currentFolder = MOCK_LIBRARY_ITEMS.find(item => item.id === currentFolderId);
+  const currentFolder = libraryItems.find(item => item.id === currentFolderId);
   
   // Get items in current folder
-  const currentViewItems = MOCK_LIBRARY_ITEMS.filter(item => item.parentId === currentFolderId);
+  // logic: if currentFolderId is null, show items with parentId null. 
+  // However, API might not return folder structure perfectly flat with parentId.
+  // The test chatbot logic grouped by folderId.
+  const currentViewItems = libraryItems.filter(item => {
+    if (currentFolderId) {
+        return item.parentId === currentFolderId;
+    }
+    // If root, show folders and files with no parent (or null parent)
+    return item.parentId === null || item.parentId === "root";
+  });
 
   const selectedFilesCount = selectedFiles.length;
 
@@ -238,7 +413,7 @@ export default function AssistantPage() {
 
   const handleBackClick = () => {
     if (currentFolder) {
-      setCurrentFolderId(currentFolder.parentId);
+      setCurrentFolderId(currentFolder.parentId || null); // Go up one level (if hierarchy supported) or to root
     } else {
       setCurrentFolderId(null);
     }
@@ -271,9 +446,64 @@ export default function AssistantPage() {
     }
   }
 
+  const handleSaveNoteClick = (msg: ChatMessage, index: number) => {
+    // Find preceding user message for context
+    let contextMsg: ChatMessage | null = null;
+    let context = "";
+
+    // Search backwards for the last user message
+    for (let i = index - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+            contextMsg = messages[i];
+            break;
+        }
+    }
+    
+    // Collect all attached file IDs from context message and AI message
+    const relevantFileIds = new Set<string>();
+
+    if (contextMsg) {
+        context = `**Question:**\n${contextMsg.content}\n\n`;
+        contextMsg.attachedFileIds?.forEach(id => relevantFileIds.add(id));
+        contextMsg.sources?.forEach(source => relevantFileIds.add(source.id));
+    }
+    
+    // Also include files from AI message if any
+    msg.attachedFileIds?.forEach(id => relevantFileIds.add(id));
+    msg.sources?.forEach(source => relevantFileIds.add(source.id));
+
+    let content = `${context}**AI Response:**\n${msg.content}`;
+    
+    // Add sources if available
+    const displaySources = msg.sources || (msg.attachedFileIds?.map(id => libraryItems.find(item => item.id === id)).filter((item): item is Material => !!item)) || [];
+    
+    if (displaySources.length > 0) {
+        content += `\n\n**Sources:**\n`;
+        displaySources.forEach(source => {
+            content += `- [${source.title}](study://file/${source.id})\n`;
+        });
+    }
+
+    setNoteContentToSave(content);
+    setNoteAttachedFileIds(Array.from(relevantFileIds));
+    setIsSaveNoteOpen(true);
+  };
+
+  const handleConfirmSaveNote = async (name: string, folderId: string | null, content: string) => {
+    const success = await createNote(name, folderId, content, noteAttachedFileIds);
+    if (success) {
+        setIsSaveNoteOpen(false);
+    }
+  };
+
+
   return (
     <div className="flex h-full gap-4 relative overflow-hidden p-4">
-      {/* Chat History Sidebar */}
+      {/* 
+        --- Chat History Sidebar (TEMPORARILY DISABLED) --- 
+        User requested to comment out the side panel for new chat and sessions.
+      */}
+      {/* 
       <div 
         className={cn(
              "flex flex-col gap-2 transition-all duration-300 ease-in-out bg-card rounded-lg border shadow-sm overflow-hidden",
@@ -283,7 +513,7 @@ export default function AssistantPage() {
         <div className="flex items-center justify-between mb-2 px-2">
             <h2 className="font-semibold">Chats</h2>
             <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNewChat}>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {}}>
                     <Plus className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8 lg:hidden" onClick={() => setIsSidebarOpen(false)}>
@@ -292,54 +522,58 @@ export default function AssistantPage() {
             </div>
         </div>
         <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-            {sessions.map(session => (
-                <div 
-                    key={session.id}
-                    className={cn(
-                        "group flex items-center justify-between p-2 rounded-md cursor-pointer text-sm transition-colors",
-                        currentSessionId === session.id 
-                            ? "bg-primary text-primary-foreground font-medium" 
-                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                    onClick={() => handleSelectSession(session.id)}
-                >
-                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
-                        <MessageSquare className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{session.title}</span>
-                    </div>
-                    <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                        onClick={(e) => handleDeleteSession(e, session.id)}
-                    >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
-                </div>
-            ))}
+             // List of sessions would go here 
         </div>
       </div>
+      */}
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col gap-4 min-w-0 transition-all duration-300">
-        <div className="flex items-center gap-2">
-             <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="shrink-0"
-            >
-                <Sidebar className="h-5 w-5" />
-            </Button>
-            <div>
-                 <h1 className="text-3xl font-bold tracking-tight">AI Study Companion</h1>
-                 <p className="text-muted-foreground mt-2">Ask questions, get explanations, and study smarter.</p>
-            </div>
+        <div className="flex items-center justify-between gap-2">
+             <div className="flex items-center gap-2">
+                {/* 
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                    className="shrink-0"
+                >
+                    <Sidebar className="h-5 w-5" />
+                </Button>
+                */}
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">StudyBomBibi Assistant</h1>
+                    <p className="text-muted-foreground mt-2">Ask questions, get explanations, and study smarter.</p>
+                </div>
+             </div>
+             <div>
+                <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleClearChat}
+                    className="text-muted-foreground hover:text-destructive hover:border-destructive"
+                    title="Clear Chat History"
+                >
+                    <Trash className="h-4 w-4 mr-2" />
+                    Clear Chat
+                </Button>
+             </div>
         </div>
         
         <Card className="flex-1 flex flex-col p-4 overflow-hidden relative">
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 pb-4">
-            {messages.map((msg, index) => (
+            {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50">
+                    <Bot className="h-12 w-12 mb-4" />
+                    <p>Start a conversation by typing below.</p>
+                    <p className="text-sm">You can also select materials from the library.</p>
+                </div>
+            )}
+            
+            {messages.map((msg, index) => {
+                const displaySources = msg.sources || (msg.attachedFileIds?.map(id => libraryItems.find(item => item.id === id)).filter((item): item is Material => !!item)) || [];
+                
+                return (
                 <div 
                 key={index} 
                 className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -352,17 +586,22 @@ export default function AssistantPage() {
                             : 'bg-muted'
                     )}
                 >
-                    {msg.role === 'assistant' && <Bot className="mt-0.5 h-4 w-4 shrink-0" />}
+                    {msg.role === 'model' && <Bot className="mt-0.5 h-4 w-4 shrink-0" />}
                     
-                    <div className="flex flex-col gap-2 w-full">
-                        <p className="leading-relaxed">{msg.content}</p>
+                    <div className="flex flex-col gap-2 w-full min-w-0">
+                        {/* Markdown Rendering */}
+                         <div className={cn("prose prose-sm max-w-none wrap-break-words", msg.role === 'user' ? "prose-invert" : "dark:prose-invert")}>
+                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {msg.content}
+                             </ReactMarkdown>
+                         </div>
                         
-                        {msg.sources && msg.sources.length > 0 && (
+                        {displaySources.length > 0 && (
                             <div className="flex flex-wrap gap-2 mt-1">
                                 <span className={cn("text-xs font-semibold mt-1.5", msg.role === 'user' ? "opacity-90" : "opacity-70")}>
                                     {msg.role === 'user' ? "Context:" : "Sources:"}
                                 </span>
-                                {msg.sources.map((source, i) => (
+                                {displaySources.map((source, i) => (
                                     <div 
                                         key={i}
                                         className={cn(
@@ -379,10 +618,25 @@ export default function AssistantPage() {
                                         }}
                                     >
                                         {getSourceIcon(source.type)}
-                                        <span className="truncate max-w-[150px]">{source.title}</span>
+                                        <span className="truncate max-w-37.5">{source.title}</span>
                                         <ExternalLink className="h-3 w-3 ml-1 opacity-50 shrink-0" />
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {msg.role === 'model' && (
+                            <div className="flex justify-end mt-1 pt-1 border-t border-border/50">
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 text-xs gap-1.5 opacity-70 hover:opacity-100 px-2 text-muted-foreground hover:text-primary-foreground"
+                                    onClick={() => handleSaveNoteClick(msg, index)}
+                                    title="Save conversation as note"
+                                >
+                                    <Save className="h-3.5 w-3.5" />
+                                    Save as Note
+                                </Button>
                             </div>
                         )}
                     </div>
@@ -390,14 +644,23 @@ export default function AssistantPage() {
                     {msg.role === 'user' && <User className="mt-0.5 h-4 w-4 shrink-0" />}
                 </div>
                 </div>
-            ))}
+            )})}
+             {isLoading && (
+                <div className="flex w-full justify-start">
+                    <div className="flex max-w-[80%] items-center gap-2 rounded-lg px-4 py-3 text-sm shadow-sm bg-muted text-muted-foreground">
+                        <Bot className="h-4 w-4 animate-pulse" />
+                        <span>Thinking...</span>
+                    </div>
+                </div>
+            )}
+             <div ref={messagesEndRef} />
             </div>
             
-            {/* Selected Files Context */}
+            {/* Selected Files Context (Files to be sent with next message) */}
             {selectedFilesCount > 0 && (
             <div className="flex gap-2 mb-2 overflow-x-auto py-2 px-1 border-t border-dashed">
                 {selectedFiles.map(file => (
-                <div key={file.id} className="flex items-center gap-1 bg-muted text-xs px-2 py-1 rounded-full whitespace-nowrap border">
+                <div key={file.id} className="flex items-center gap-1 bg-muted text-xs px-2 py-1 rounded-full whitespace-nowrap border animate-in fade-in zoom-in-95 duration-200">
                     {getSourceIcon(file.type)}
                     <span className="max-w-37.5 truncate">{file.title}</span>
                     <button 
@@ -430,8 +693,9 @@ export default function AssistantPage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                disabled={isLoading}
             />
-            <Button size="icon" onClick={handleSendMessage}>
+            <Button size="icon" onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading}>
                 <Send className="h-4 w-4" />
             </Button>
             </div>
@@ -468,7 +732,7 @@ export default function AssistantPage() {
                 {currentViewItems.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm">
                         <Folder className="h-8 w-8 mb-2 opacity-20" />
-                        <p>Empty Folder</p>
+                        <p>{libraryItems.length === 0 ? "Loading Library..." : "Empty Folder"}</p>
                     </div>
                 ) : (
                     currentViewItems.map((item) => {
@@ -505,30 +769,7 @@ export default function AssistantPage() {
 
                                 {isFolder ? (
                                     <div className="flex items-center gap-1">
-                                        <div 
-                                            className={cn(
-                                                "h-6 w-6 rounded-md flex items-center justify-center transition-colors shrink-0",
-                                                isSelected ? "text-primary-foreground hover:bg-primary-foreground/20" : "text-muted-foreground hover:bg-muted-foreground/10"
-                                            )}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleLibraryFile(item);
-                                            }}
-                                        >
-                                            {isSelected ? <Check className="h-4 w-4" /> : <div className="h-3 w-3 border border-muted-foreground/50 rounded-sm" />}
-                                        </div>
-                                        <div 
-                                            className={cn(
-                                                "h-6 w-6 rounded-md flex items-center justify-center", 
-                                                isSelected ? "text-primary-foreground hover:bg-primary-foreground/20" : "text-muted-foreground hover:bg-muted-foreground/10"
-                                            )}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleFolderClick(item.id);
-                                            }}
-                                        >
-                                            <ChevronLeft className="h-4 w-4 rotate-180" />
-                                        </div>
+                                        <ChevronLeft className="h-4 w-4 rotate-180 opacity-50" />
                                     </div>
                                 ) : (
                                     <div 
@@ -556,7 +797,7 @@ export default function AssistantPage() {
       </div>
 
        {showPreview && previewMaterial && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in-0">
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in-0">
           <Card className="w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl animate-in zoom-in-95 bg-card">
             <CardHeader className="flex flex-row items-center justify-between border-b px-6 py-4">
               <div className="flex items-center gap-2">
@@ -576,7 +817,25 @@ export default function AssistantPage() {
           </Card>
         </div>
       )}
+      
+      <ConfirmationModal
+        isOpen={showClearChatConfirm}
+        onOpenChange={setShowClearChatConfirm}
+        title="Clear Chat History"
+        message="Are you sure you want to clear the chat history? This cannot be undone."
+        confirmText="Clear History"
+        variant="destructive"
+        onConfirm={processClearChat}
+      />
 
+      <SaveToNoteModal
+        isOpen={isSaveNoteOpen}
+        initialContent={noteContentToSave}
+        folders={libraryItems.filter(item => item.type === "Folder").map(f => ({ id: f.id, title: f.title, parentId: f.parentId }))}
+        onConfirm={handleConfirmSaveNote}
+        onCancel={() => setIsSaveNoteOpen(false)}
+        loading={actionLoading}
+      />
     </div>
   );
 }

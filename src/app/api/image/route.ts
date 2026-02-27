@@ -19,7 +19,9 @@ let finalPrompt = sanitizedPrompt;
 // Check if the prompt is the "JSON-style" slide prompt
 if (sanitizedPrompt.includes("slide_title") || sanitizedPrompt.includes("bullets")) {
   // It's a Slide! Ask for a clean background ONLY.
-  finalPrompt = "A beautiful, premium, abstract gradient desktop wallpaper. Dark elegant colors, soft blurred lighting, corporate tech aesthetic, empty negative space. Absolutely zero text, no letters, no words, no fonts, purely abstract background art.";
+  finalPrompt = `Abstract, beautiful, blurred gradient, no text, background art representing the concept of: ${imagePrompt}. 
+Cinematic lighting, dark moody aesthetic, empty negative space for copy.
+ABSOLUTELY NO TEXT, NO LETTERS, NO WORDS, NO FONTS, NO WRITING, pure abstract scene.`;
 } else {
   // It's a Diagram! Use the original description.
   finalPrompt = `${sanitizedPrompt}, highly detailed educational diagram, 16:9 aspect ratio, professional layout.`;

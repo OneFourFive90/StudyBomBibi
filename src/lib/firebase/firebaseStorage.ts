@@ -25,6 +25,11 @@ import {
   getMetadata,
   UploadMetadata,
 } from 'firebase/storage';
+import {
+  getUploadFileKind,
+  normalizeUploadMimeType,
+  SUPPORTED_UPLOAD_TYPES_LABEL,
+} from '@/lib/upload/fileTypePolicy';
 
 // ============================================
 // Types
@@ -35,6 +40,7 @@ export interface UploadResult {
   path: string;
   fileName: string;
   hash?: string;
+  alreadyExists?: boolean;
 }
 
 export interface StorageFile {
@@ -195,6 +201,7 @@ export async function uploadPdf(
       path: filePath,
       fileName: `${fileHash}.pdf`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -217,6 +224,7 @@ export async function uploadPdf(
     path: filePath,
     fileName: `${fileHash}.pdf`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 
@@ -266,6 +274,7 @@ export async function uploadImage(
       path: filePath,
       fileName: `${fileHash}.${extension}`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -288,6 +297,7 @@ export async function uploadImage(
     path: filePath,
     fileName: `${fileHash}.${extension}`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 
@@ -321,6 +331,11 @@ function getDocumentExtension(mimeType: string, fileName: string): string {
   if (mimeToExt[mimeType]) {
     return mimeToExt[mimeType];
   }
+
+  const normalizedMimeType = normalizeUploadMimeType(mimeType, fileName);
+  if (mimeToExt[normalizedMimeType]) {
+    return mimeToExt[normalizedMimeType];
+  }
   
   // Fallback: check file extension
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -340,11 +355,7 @@ export async function uploadDocument(
   file: File
 ): Promise<UploadResult> {
   // Validate file type
-  const validTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
-  const validExtensions = ['txt', 'md', 'markdown', 'csv'];
-  const fileExt = file.name.split('.').pop()?.toLowerCase();
-  
-  if (!validTypes.includes(file.type) && !validExtensions.includes(fileExt || '')) {
+  if (getUploadFileKind(file.type, file.name) !== 'document') {
     throw new Error('Invalid file type. Only .txt, .md, and .csv files are allowed.');
   }
 
@@ -363,6 +374,7 @@ export async function uploadDocument(
       path: filePath,
       fileName: `${fileHash}.${extension}`,
       hash: fileHash,
+      alreadyExists: true,
     };
   }
 
@@ -392,6 +404,7 @@ export async function uploadDocument(
     path: filePath,
     fileName: `${fileHash}.${extension}`,
     hash: fileHash,
+    alreadyExists: false,
   };
 }
 
@@ -441,28 +454,21 @@ export async function uploadFile(
   userId: string,
   file: File
 ): Promise<UploadResult> {
-  const fileExt = file.name.split('.').pop()?.toLowerCase();
-  
-  // PDF
-  if (file.type === 'application/pdf' || fileExt === 'pdf') {
+  const kind = getUploadFileKind(file.type, file.name);
+
+  if (kind === 'pdf') {
     return uploadPdf(userId, file);
   }
-  
-  // Images
-  const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-  const imageExts = ['jpg', 'jpeg', 'png', 'webp'];
-  if (imageTypes.includes(file.type) || imageExts.includes(fileExt || '')) {
+
+  if (kind === 'image') {
     return uploadImage(userId, file);
   }
-  
-  // Documents (.txt, .md, .csv)
-  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
-  const docExts = ['txt', 'md', 'markdown', 'csv'];
-  if (docTypes.includes(file.type) || docExts.includes(fileExt || '')) {
+
+  if (kind === 'document') {
     return uploadDocument(userId, file);
   }
-  
-  throw new Error(`Unsupported file type: ${file.type || fileExt}. Supported: PDF, images (jpg, png, webp), documents (txt, md)`);
+
+  throw new Error(`Unsupported file type: ${file.type || file.name}. Supported: ${SUPPORTED_UPLOAD_TYPES_LABEL}`);
 }
 
 /**

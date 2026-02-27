@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
+import { FirebaseError } from "firebase/app";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -55,8 +56,23 @@ export default function LoginPage() {
         await signIn(email, password);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Authentication failed";
-      setError(errorMessage);
+      if (error instanceof FirebaseError) {
+        if (error.code === "auth/email-already-in-use") {
+          setError("This email is already registered. Please sign in, or use Continue with Google if you created the account with Google.");
+          setIsSignUp(false);
+        } else if (error.code === "auth/invalid-credential") {
+          setError("Invalid email or password.");
+        } else if (error.code === "auth/user-not-found") {
+          setError("No account found for this email.");
+        } else if (error.code === "auth/wrong-password") {
+          setError("Incorrect password.");
+        } else {
+          setError("Authentication failed. Please try again.");
+        }
+      } else {
+        const errorMessage = error instanceof Error ? error.message : "Authentication failed";
+        setError(errorMessage);
+      }
       console.error("Auth error", error);
     } finally {
       setIsLoading(false);

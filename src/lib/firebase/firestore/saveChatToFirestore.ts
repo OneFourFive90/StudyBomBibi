@@ -13,6 +13,7 @@ import {
   getDoc,
   query,
   orderBy,
+  writeBatch,
 } from "firebase/firestore";
 
 export interface ChatMessage {
@@ -158,5 +159,27 @@ export async function getUserChatDocument(
   } catch (error: unknown) {
     console.error("Error fetching chat document:", error);
     throw new Error("Failed to fetch chat document");
+  }
+}
+/**
+ * Delete all messages for a user's chat history
+ * @param userId - The ID of the user
+ */
+export async function deleteUserChatHistory(userId: string): Promise<void> {
+  try {
+    const messagesCollectionRef = collection(db, "chats", userId, "messages");
+    const snapshot = await getDocs(messagesCollectionRef);
+
+    if (snapshot.empty) return;
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error("Error deleting chat history:", error);
+    throw new Error("Failed to delete chat history");
   }
 }

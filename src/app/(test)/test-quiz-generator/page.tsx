@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { QuizQuestion } from "@/lib/firebase/firestore/saveQuizToFirestore";
 import { useRouter } from "next/navigation";
+import { UPLOAD_FILE_ACCEPT } from "@/lib/upload/fileTypePolicy";
 import { useAuth } from "@/context/AuthContext";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
+
 
 interface PreviewQuiz {
   title: string;
@@ -216,7 +218,7 @@ export default function QuizGeneratorPage() {
               <label className="block text-sm font-medium mb-2">Or upload a real file</label>
               <input
                 type="file"
-                accept=".pdf,.txt,.md,.csv,image/*"
+                accept={UPLOAD_FILE_ACCEPT}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -251,7 +253,7 @@ export default function QuizGeneratorPage() {
                 <label className="block text-sm font-medium mb-2">Or upload a real past year file</label>
                 <input
                   type="file"
-                  accept=".pdf,.txt,.md,.csv,image/*"
+                  accept={UPLOAD_FILE_ACCEPT}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {

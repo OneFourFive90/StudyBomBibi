@@ -5,13 +5,15 @@ import {
   UploadResult,
 } from '../firebaseStorage';
 import { writeFileMetadataToFirestore } from '../firestore/writeFileMetadata';
+import {
+  getUploadFileKind,
+  normalizeUploadMimeType,
+  SUPPORTED_UPLOAD_TYPES_LABEL,
+} from '@/lib/upload/fileTypePolicy';
 
 function getDocumentMimeType(mimeType: string, fileName: string): string {
-  if (mimeType) return mimeType;
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  if (ext === 'md' || ext === 'markdown') return 'text/markdown';
-  if (ext === 'csv') return 'text/csv';
-  return 'text/plain';
+  const normalized = normalizeUploadMimeType(mimeType, fileName);
+  return normalized || 'text/plain';
 }
 
 async function writeMetadataOrThrow(
@@ -55,27 +57,21 @@ export async function uploadDocument(userId: string, file: File, extractedText: 
 }
 
 export async function uploadFile(userId: string, file: File, extractedText: string): Promise<UploadResult> {
-  const fileExt = file.name.split('.').pop()?.toLowerCase();
+  const kind = getUploadFileKind(file.type, file.name);
 
-  if (file.type === 'application/pdf' || fileExt === 'pdf') {
+  if (kind === 'pdf') {
     return uploadPdf(userId, file, extractedText);
   }
 
-  const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-  const imageExts = ['jpg', 'jpeg', 'png', 'webp'];
-  if (imageTypes.includes(file.type) || imageExts.includes(fileExt || '')) {
+  if (kind === 'image') {
     return uploadImage(userId, file, extractedText);
   }
 
-  const docTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/csv'];
-  const docExts = ['txt', 'md', 'markdown', 'csv'];
-  if (docTypes.includes(file.type) || docExts.includes(fileExt || '')) {
+  if (kind === 'document') {
     return uploadDocument(userId, file, extractedText);
   }
 
-  throw new Error(
-    `Unsupported file type: ${file.type || fileExt}. Supported: PDF, images (jpg, png, webp), documents (txt, md, csv)`
-  );
+  throw new Error(`Unsupported file type: ${file.type || file.name}. Supported: ${SUPPORTED_UPLOAD_TYPES_LABEL}`);
 }
 
 // export async function uploadFiles(userId: string, files: File[]): Promise<UploadResult[]> {

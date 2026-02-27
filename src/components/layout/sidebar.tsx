@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Library, BookOpen, GraduationCap, Bot, Sparkles, X, LayoutDashboard, ChevronLeft, ChevronRight, Menu, LogOut } from "lucide-react";
+import { Library, BookOpen, GraduationCap, Bot, X, LayoutDashboard, LogOut} from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -55,10 +56,10 @@ export function Sidebar({ className, onLinkClick, isCollapsed = false, onToggleC
           isCollapsed ? "justify-center p-2" : "justify-between p-6"
         )}
       >
-        <Link href="/" className={cn("flex items-center transition-all duration-300", isCollapsed ? "justify-center" : "space-x-2")}>
-          <img src="/favicon.ico" alt="Logo" className="h-6 w-6" />
+        <div className={cn("flex items-center transition-all duration-300", isCollapsed ? "justify-center" : "space-x-2")}>
+          <Image src="/favicon.ico" alt="Logo" width={24} height={24} />
           {!isCollapsed && <span className="text-xl font-bold tracking-tight whitespace-nowrap overflow-hidden">StudyBomBibi</span>}
-        </Link>
+        </div>
         
         {/* Mobile close button */}
         {onLinkClick && (
@@ -113,15 +114,17 @@ export function Sidebar({ className, onLinkClick, isCollapsed = false, onToggleC
             </span>
           </div>
         )}
-        <div className="flex items-center gap-1">
+        <div className={cn("flex items-center gap-1", isCollapsed ? "justify-center w-full" : "")}>
           <ThemeToggle />
-          <button 
-            onClick={logout} 
-            className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
-            title="Logout"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
+          {!isCollapsed && (
+            <button 
+              onClick={logout} 
+              className="p-2 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
