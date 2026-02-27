@@ -31,16 +31,16 @@
   --foreground: #060405;
 
   --primary: #b33799;
-  --primary-foreground: #fcb3ec;
+  --primary-foreground: #ffffff;
 
   --secondary: #791564;
-  --secondary-foreground: #ea86d4;
+  --secondary-foreground: #ffdcf7;
 
   --muted: #f4f4f5;
   --muted-foreground: #71717a;
 
   --accent: #820065;
-  --accent-foreground: #f042ca;
+  --accent-foreground: #f3b5e6;
 
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
@@ -67,17 +67,17 @@
   --background: #060405;
   --foreground: #f3d4ea;
 
-  --primary: #e95dca;
-  --primary-foreground: #791564;
+  --primary: #791564;
+  --primary-foreground: #ffdcf7;
 
   --secondary: #b33799;
-  --secondary-foreground: #ea86d4;
+  --secondary-foreground: #ebcce3;
 
   --muted: #27272a;
   --muted-foreground: #a1a1aa;
 
-  --accent: #f042ca;
-  --accent-foreground: #820065;
+  --accent: #820065;
+  --accent-foreground: #f3b5e6;
 
   --destructive: #7f1d1d;
   --destructive-foreground: #fafafa;
@@ -90,6 +90,16 @@
   --card-foreground: #f3d4ea;
   --popover: #18181b;
   --popover-foreground: #f3d4ea;
+}
+
+.prose-invert {
+  color: var(--primary-foreground);
+  border-left-color: color-mix(in srgb, var(--primary) 80%, transparent);
+}
+
+.prose-invert blockquote {
+  color: var(--secondary-foreground);
+  border-left-color: color-mix(in srgb, var(--primary) 80%, transparent);
 }
 
 @layer base {
