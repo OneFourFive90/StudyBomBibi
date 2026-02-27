@@ -32,6 +32,7 @@ export function toFileMaterial(file: FileRecord): Material {
     downloadURL: file.downloadURL,
     mimeType: file.mimeType,
     content: isNote ? (file.extractedText || "") : undefined,
+    attachedFileIds: file.attachedFileIds || [],
   };
 }
 

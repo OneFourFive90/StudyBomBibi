@@ -8,6 +8,7 @@ interface CreateNoteRequest {
   title?: string;
   content?: string;
   folderId?: string | null;
+  attachedFileIds?: string[];
 }
 
 function normalizeNoteFileName(title: string): string {
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as CreateNoteRequest;
     const folderId = body.folderId ?? null;
+    const attachedFileIds = body.attachedFileIds || [];
 
     const fileName = normalizeNoteFileName(body.title || "New Note");
     const noteContent = body.content ?? "";
@@ -70,6 +72,7 @@ export async function POST(req: Request) {
       vectorEmbedding: [],
       tags: ["note"],
       category: "note",
+      attachedFileIds: attachedFileIds,
     });
 
     return NextResponse.json(

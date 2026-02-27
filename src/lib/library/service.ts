@@ -117,14 +117,15 @@ export async function getFilePreviewApi(fileId: string): Promise<{ content: stri
 
 // --- Note Management ---
 
-export async function createNoteApi(name: string, folderId: string | null, content: string = ""): Promise<void> {
+export async function createNoteApi(name: string, folderId: string | null, content: string = "", attachedFileIds: string[] = []): Promise<void> {
   const response = await authenticatedFetch("/api/notes/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      name,
+      title: name,
       folderId,
       content,
+      attachedFileIds,
     }),
   });
 

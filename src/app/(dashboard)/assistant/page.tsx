@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Card, CardTitle, CardHeader, CardContent } from "@/components/ui/card";
-import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar, Trash } from "lucide-react";
+import { Send, Bot, User, Library, FileText, Check, X, Folder, ChevronLeft, BookOpen, ExternalLink, MessageSquare, Plus, Trash2, Sidebar, Trash, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/context/AuthContext";
 import { ConfirmationModal } from "@/components/ui/confirmation-modal";
+import { SaveToNoteModal } from "@/components/library/SaveToNoteModal";
+import { useLibraryActions } from "@/lib/library/actions";
 
 // --- Types ---
 type MaterialType = "PDF" | "Note" | "Document" | "Folder" | "IMG" | "PPT" | "TXT" | "DOCX";
@@ -22,6 +24,7 @@ interface Material {
   content?: string; 
   tag?: string;
   parentId: string | null; // null means root directory
+  attachedFileIds?: string[]; // For notes that have attached files/sources
 }
 
 interface ChatMessage {
@@ -59,7 +62,8 @@ const mapFileToMaterial = (file: any): Material => {
         title: name,
         parentId: file.folderId || null,
         author: "Unknown", // API doesn't seem to return author yet
-        content: file.content 
+        content: file.content,
+        attachedFileIds: file.attachedFileIds || []
     };
 };
 
@@ -95,39 +99,46 @@ export default function AssistantPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Save Note State
+  const [isSaveNoteOpen, setIsSaveNoteOpen] = useState(false);
+  const [noteContentToSave, setNoteContentToSave] = useState("");
+  const [noteAttachedFileIds, setNoteAttachedFileIds] = useState<string[]>([]);
+
+  const fetchFilesAndFolders = async () => {
+      try {
+          const token = await getIdToken();
+          const headers = { Authorization: `Bearer ${token}` };
+
+          const [filesRes, foldersRes] = await Promise.all([
+              fetch(`/api/get-files?userId=${userId}`, { headers }),
+              fetch(`/api/folders?action=get-all&userId=${userId}`, { headers })
+          ]);
+
+          let newLibraryItems: Material[] = [];
+
+          if (foldersRes.ok) {
+              const data = await foldersRes.json();
+              const folderMaterials = (data.folders || []).map(mapFolderToMaterial);
+              newLibraryItems = [...newLibraryItems, ...folderMaterials];
+          }
+
+          if (filesRes.ok) {
+              const data = await filesRes.json();
+              const fileMaterials = (data.files || []).map(mapFileToMaterial);
+              newLibraryItems = [...newLibraryItems, ...fileMaterials];
+          }
+          
+          setLibraryItems(newLibraryItems);
+      } catch (error) {
+          console.error("Failed to fetch library items:", error);
+      }
+  };
+
+  const { createNote, actionLoading } = useLibraryActions(fetchFilesAndFolders);
+
   // --- Data Fetching ---
   useEffect(() => {
     if (!userId) return;
-
-    const fetchFilesAndFolders = async () => {
-        try {
-            const token = await getIdToken();
-            const headers = { Authorization: `Bearer ${token}` };
-
-            const [filesRes, foldersRes] = await Promise.all([
-                fetch(`/api/get-files?userId=${userId}`, { headers }),
-                fetch(`/api/folders?action=get-all&userId=${userId}`, { headers })
-            ]);
-
-            let newLibraryItems: Material[] = [];
-
-            if (foldersRes.ok) {
-                const data = await foldersRes.json();
-                const folderMaterials = (data.folders || []).map(mapFolderToMaterial);
-                newLibraryItems = [...newLibraryItems, ...folderMaterials];
-            }
-
-            if (filesRes.ok) {
-                const data = await filesRes.json();
-                const fileMaterials = (data.files || []).map(mapFileToMaterial);
-                newLibraryItems = [...newLibraryItems, ...fileMaterials];
-            }
-            
-            setLibraryItems(newLibraryItems);
-        } catch (error) {
-            console.error("Failed to fetch library items:", error);
-        }
-    };
 
 const fetchHistory = async () => {
         try {
@@ -422,6 +433,56 @@ const fetchHistory = async () => {
     }
   }
 
+  const handleSaveNoteClick = (msg: ChatMessage, index: number) => {
+    // Find preceding user message for context
+    let contextMsg: ChatMessage | null = null;
+    let context = "";
+
+    // Search backwards for the last user message
+    for (let i = index - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+            contextMsg = messages[i];
+            break;
+        }
+    }
+    
+    // Collect all attached file IDs from context message and AI message
+    const relevantFileIds = new Set<string>();
+
+    if (contextMsg) {
+        context = `**Question:**\n${contextMsg.content}\n\n`;
+        contextMsg.attachedFileIds?.forEach(id => relevantFileIds.add(id));
+        contextMsg.sources?.forEach(source => relevantFileIds.add(source.id));
+    }
+    
+    // Also include files from AI message if any
+    msg.attachedFileIds?.forEach(id => relevantFileIds.add(id));
+    msg.sources?.forEach(source => relevantFileIds.add(source.id));
+
+    let content = `${context}**AI Response:**\n${msg.content}`;
+    
+    // Add sources if available
+    const displaySources = msg.sources || (msg.attachedFileIds?.map(id => libraryItems.find(item => item.id === id)).filter((item): item is Material => !!item)) || [];
+    
+    if (displaySources.length > 0) {
+        content += `\n\n**Sources:**\n`;
+        displaySources.forEach(source => {
+            content += `- [${source.title}](study://file/${source.id})\n`;
+        });
+    }
+
+    setNoteContentToSave(content);
+    setNoteAttachedFileIds(Array.from(relevantFileIds));
+    setIsSaveNoteOpen(true);
+  };
+
+  const handleConfirmSaveNote = async (name: string, folderId: string | null, content: string) => {
+    const success = await createNote(name, folderId, content, noteAttachedFileIds);
+    if (success) {
+        setIsSaveNoteOpen(false);
+    }
+  };
+
 
   return (
     <div className="flex h-full gap-4 relative overflow-hidden p-4">
@@ -548,6 +609,21 @@ const fetchHistory = async () => {
                                         <ExternalLink className="h-3 w-3 ml-1 opacity-50 shrink-0" />
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {msg.role === 'model' && (
+                            <div className="flex justify-end mt-1 pt-1 border-t border-border/50">
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 text-xs gap-1.5 opacity-70 hover:opacity-100 px-2 text-muted-foreground hover:text-primary-foreground"
+                                    onClick={() => handleSaveNoteClick(msg, index)}
+                                    title="Save conversation as note"
+                                >
+                                    <Save className="h-3.5 w-3.5" />
+                                    Save as Note
+                                </Button>
                             </div>
                         )}
                     </div>
@@ -737,6 +813,15 @@ const fetchHistory = async () => {
         confirmText="Clear History"
         variant="destructive"
         onConfirm={processClearChat}
+      />
+
+      <SaveToNoteModal
+        isOpen={isSaveNoteOpen}
+        initialContent={noteContentToSave}
+        folders={libraryItems.filter(item => item.type === "Folder").map(f => ({ id: f.id, title: f.title, parentId: f.parentId }))}
+        onConfirm={handleConfirmSaveNote}
+        onCancel={() => setIsSaveNoteOpen(false)}
+        loading={actionLoading}
       />
     </div>
   );

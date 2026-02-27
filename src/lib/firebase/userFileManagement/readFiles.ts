@@ -20,6 +20,7 @@ export interface FirestoreFile {
   folderId: string | null;
   extractedText: string;
   vectorEmbedding: number[];
+  attachedFileIds?: string[];
 }
 
 /**
@@ -31,10 +32,14 @@ export async function getUserFiles(userId: string): Promise<FirestoreFile[]> {
     const q = query(filesRef, where('ownerId', '==', userId));
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as FirestoreFile));
+    return querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+            id: doc.id,
+            ...data,
+            attachedFileIds: data.attachedFileIds || []
+        } as FirestoreFile;
+    });
   } catch (error) {
     console.error('Error fetching user files:', error);
     throw new Error('Failed to fetch files');

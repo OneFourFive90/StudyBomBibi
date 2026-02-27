@@ -581,12 +581,27 @@ export default function LibraryPage() {
               onRename={(id, name) => setPendingRename({ id, type: "file", parentId: selectedItem.parentId, currentName: selectedItem.title, newName: name })}
               onMove={(id) => setPendingMove({ id, type: "file", currentParentId: selectedItem.parentId })}
               onDelete={(id) => setPendingDelete({ id, type: "file", label: selectedItem.title })}
+              onNavigateToFile={(fileId) => {
+                  const target = allFiles.find(f => f.id === fileId); // Check files
+                  if (target) {
+                      setSelectedItem(toFileMaterial(target));
+                  } else {
+                      // Check folders if needed, but usually files are previewed
+                      // Also might need to fetch if not in current list?
+                      // Assuming all files are loaded in `allFiles`
+                  }
+              }}
               previewKind={getDocumentPreviewKind(selectedItem)}
               previewStatus={docPreviewStatus}
               previewText={docPreviewText}
               previewError={docPreviewError}
               onAiExplain={handleExplain}
               onAiSummarise={handleSummarise}
+              attachedFiles={selectedItem.attachedFileIds?.map(id => {
+                  const file = allFiles.find(f => f.id === id);
+                  if (file) return { id: file.id, title: file.originalName, type: file.mimeType };
+                  return null;
+              }).filter((f): f is { id: string; title: string; type: string } => f !== null) || []}
           />
       )}
 

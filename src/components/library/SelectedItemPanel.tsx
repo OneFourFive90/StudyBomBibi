@@ -50,6 +50,9 @@ interface SelectedItemPanelProps {
     onRename: (id: string, name: string) => void;
     onMove: (id: string) => void;
     onDelete: (id: string) => void;
+    
+    // Navigation
+    onNavigateToFile?: (fileId: string) => void;
 
     // Preview props
     previewKind: DocumentPreviewKind;
@@ -60,6 +63,9 @@ interface SelectedItemPanelProps {
     // AI handlers
     onAiExplain: (text: string) => void;
     onAiSummarise: (text: string) => void;
+
+    // Attached Sources (for notes)
+    attachedFiles?: Array<{ id: string; title: string; type: string; }>;
 }
 
 import { NoteEditor } from "./NoteEditor";
@@ -79,12 +85,14 @@ export function SelectedItemPanel({
     onRename,
     onMove,
     onDelete,
+    onNavigateToFile,
     previewKind,
     previewStatus,
     previewText,
     previewError,
     onAiExplain,
-    onAiSummarise
+    onAiSummarise,
+    attachedFiles = []
 }: SelectedItemPanelProps) {
     const editorRef = useRef<HTMLElement | null>(null);
     const [contextMenuSelection, setContextMenuSelection] = useState<{ text: string; rect: DOMRect } | null>(null);
@@ -193,6 +201,24 @@ export function SelectedItemPanel({
                     onKeyUp={handleTextSelection} 
                     onScroll={() => setContextMenuSelection(null)}
                 >
+                    {attachedFiles && attachedFiles.length > 0 && (
+                        <div className="mb-6 flex flex-wrap gap-2 pb-4 border-b">
+                            <span className="text-xs font-semibold text-muted-foreground w-full mb-1">Sources:</span>
+                            {attachedFiles.map((file) => (
+                                <button
+                                    key={file.id}
+                                    onClick={() => onNavigateToFile?.(file.id)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50 hover:bg-muted text-xs font-medium transition-colors border border-transparent hover:border-border"
+                                    title="View Source"
+                                >
+                                    <FileText className="h-3 w-3 text-blue-500" />
+                                    <span className="truncate max-w-[200px]">{file.title}</span>
+                                    <ExternalLink className="h-3 w-3 opacity-50" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {selectedItem.type === "Note" ? (
                         <NoteEditor 
                             item={selectedItem}
@@ -206,6 +232,12 @@ export function SelectedItemPanel({
                             // @ts-ignore
                             editorRef={editorRef}
                             noteBaselineContent={noteBaselineContent}
+                            onLinkClick={(href) => {
+                                if (href.startsWith("study://file/")) {
+                                    const fileId = href.split("study://file/")[1];
+                                    onNavigateToFile?.(fileId);
+                                }
+                            }}
                         />
                     ) : (
                         <FilePreview 

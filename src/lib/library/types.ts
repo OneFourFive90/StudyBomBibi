@@ -12,6 +12,7 @@ export interface Material {
   parentId: string | null;
   downloadURL?: string;
   mimeType?: string;
+  attachedFileIds?: string[];
 }
 
 export interface FolderRecord {
@@ -31,6 +32,7 @@ export interface FileRecord {
   downloadURL: string;
   category?: string;
   extractedText?: string;
+  attachedFileIds?: string[];
 }
 
 export interface PendingDeleteAction {
