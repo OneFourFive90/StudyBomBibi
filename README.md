@@ -38,15 +38,10 @@ During our beta testing with 39 real users, we encountered and solved several cr
 
 ## Future Roadmap
 
-*   **Phase 1 (0-12 Months): Creator-Led Marketplace**
-    *   Launch a marketplace where educators can upload materials.
-    *   Enable students to hyper-personalize purchased courses using Gemini to restructure pacing.
-*   **Phase 2 (1-2 Years): Enterprise Integration**
-    *   Integrate via API with platforms like Moodle, Canvas, and Google Classroom.
-    *   Automate the processing of lecture materials the moment a professor uploads them.
-*   **Phase 3 (2+ Years): Global Accessibility**
-    *   Utilize Gemini's advanced translation to allow uploads in native languages while receiving world-class study plans in English (and vice versa).
-    *   Launch "AI-Verified" peer tutoring economy.
+*   **Integration with Personal Calendars (Google/Outlook)**
+    *   Directly sync generated study plans with students' personal calendars to send reminders and block out dedicated focus time, turning static plans into actionable schedules.
+*   **Community Study Hub & Peer Sharing**
+    *   Allow users to share their verified AI-generated quizzes and course summaries with classmates, fostering a collaborative learning environment where students can test each other.
 
 ## Features
 
