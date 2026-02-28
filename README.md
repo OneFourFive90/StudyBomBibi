@@ -27,14 +27,11 @@ Our architecture leverages Google's latest AI technologies to build a robust, sc
 
 ## Challenges Faced
 
-During our beta testing with 39 real users, we encountered and solved several critical issues:
+During development, we encountered several key challenges:
 
-1.  **The Context Switching Problem:** Users disliked switching tabs to use AI tools.
-    *   *Solution:* We built **In-Text Contextual AI**, allowing users to highlight text directly in a document to "Quick Explain" or "Summarize" without breaking flow.
-2.  **Library Clutter:** Users found it hard to organize AI-generated insights.
-    *   *Solution:* We implemented **Smart Folders** and a direct **"Save to Notes"** feature within chats to create a structured knowledge base.
-3.  **Stability & Auth:** Early versions suffered from chatbot timeouts and session drops.
-    *   *Solution:* We optimized LLM API timeouts and patched the Firebase Google Authentication flow, resulting in zero reported login drops in subsequent tests.
+*   **Mapping AI Responses to UI:** It was difficult to consistently parse and map the unstructured text responses from the AI into the structured UI components (like quizzes and study plans).
+*   **Secure Data Flow:** Managing the secure transfer of sensitive user data between the Next.js frontend and the backend API required careful architectural planning.
+*   **Defining the Core Problem:** We spent significant time iterating on our problem statement to ensure we were solving the root cause of "digital fragmentation" rather than just building a generic tool.
 
 ## Future Roadmap
 
