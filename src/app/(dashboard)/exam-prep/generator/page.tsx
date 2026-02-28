@@ -722,8 +722,8 @@ export default function GeneratorPage() {
               {mode === "paper" &&
               renderFileSection(
                 "reference",
-                "Mock Exam (Reference Format)",
-                "Upload or pick mock exam files to guide question format/style."
+                "Exam Paper (Reference Format)",
+                "Upload or pick past exam paper files to guide question format/style."
               )}
             </div>
 
@@ -1013,7 +1013,7 @@ export default function GeneratorPage() {
           <Card className="w-full max-w-lg shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
               <CardTitle>
-                Select from Library ({libraryTarget === "syllabus" ? "Syllabus / Materials" : "Mock Exam Reference"})
+                Select from Library ({libraryTarget === "syllabus" ? "Syllabus / Materials" : "Exam Paper Reference"})
               </CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setIsLibraryOpen(false)}>
                 <X className="h-4 w-4" />
