@@ -42,17 +42,18 @@ During development, we encountered several key challenges:
 
 ## Features
 
-- **Dashboard** - Central hub for managing your learning journey
-- **My Library** - Organize and manage your study materials and files
-- **AI Courses** - AI-generated courses tailored to your learning needs
-- **Exam Prep** - Focused preparation tools for exams
-- **AI Assistant** - Intelligent chatbot that answers questions and explains concepts
-- **Quiz Generation** - Automatically generate quizzes from your study materials
-- **Text Extraction** - Extract text from images and documents
-- **File Management** - Upload, preview, and organize study materials
-- **Notes** - Create and manage study notes
-- **Text-to-Speech** - Convert text to audio for better learning retention
-- **Dark Mode** - Light and dark theme support
+* **Dashboard** - Central hub for managing your learning journey
+* **My Library** - Organize and manage your study materials and files
+* **AI Courses** - AI-generated courses tailored to your learning needs
+* **Exam Prep** - Focused preparation tools for exams
+  * **Quiz Generation** - Automatically generate quizzes from your study materials
+  * **Mock Exam Generator** - Simulate comprehensive past-year style exams
+* **AI Assistant** - Intelligent chatbot that answers questions and explains concepts
+* **Text Extraction** - Extract text from images and documents
+* **File Management** - Upload, preview, and organize study materials
+* **Notes** - Create and manage study notes
+* **Text-to-Speech** - Convert text to audio for better learning retention
+* **Dark Mode** - Light and dark theme support
 
 ## Tech Stack
 
