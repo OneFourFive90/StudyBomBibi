@@ -83,7 +83,14 @@ export default function LibraryPage() {
   const [newFolderName, setNewFolderName] = useState("");
   
   const [pendingNewNoteName, setPendingNewNoteName] = useState<string | null>(null);
-  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{
+    currentFileIndex: number;
+    currentFileName: string;
+    isUploading: boolean;
+    completed: number;
+    failed: string[];
+  }>({ currentFileIndex: -1, currentFileName: '', isUploading: false, completed: 0, failed: [] });
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteAction | null>(null);
   const [pendingRename, setPendingRename] = useState<PendingRenameAction | null>(null);
   const [pendingMove, setPendingMove] = useState<PendingMoveAction | null>(null);
@@ -229,27 +236,99 @@ export default function LibraryPage() {
   };
 
   const handleSelectUploadFile = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
-    if (!isAllowedUploadFileType(file.type, file.name)) {
-        showToast("File type not supported", "error");
-        return;
+    const validFiles: File[] = [];
+    const invalidFiles: string[] = [];
+
+    files.forEach(file => {
+      if (isAllowedUploadFileType(file.type, file.name)) {
+        validFiles.push(file);
+      } else {
+        invalidFiles.push(file.name);
+      }
+    });
+
+    if (invalidFiles.length > 0) {
+      showToast(`Some files are not supported: ${invalidFiles.join(', ')}`, "error");
     }
 
-    setPendingUploadFile(file);
+    if (validFiles.length > 0) {
+      setPendingUploadFiles(validFiles);
+      setUploadProgress({
+        currentFileIndex: -1,
+        currentFileName: '',
+        isUploading: false,
+        completed: 0,
+        failed: []
+      });
+    }
+
     event.target.value = "";
   };
 
   const handleConfirmUpload = async () => {
-    const file = pendingUploadFile;
-    if (!file) return;
+    const files = pendingUploadFiles;
+    if (files.length === 0) return;
 
-    const success = await uploadFile(file, currentFolderId);
-    if (success) {
-        setPendingUploadFile(null);
-        showToast("File uploaded successfully", "success");
+    // Capture the folder ID at the start to avoid any potential state changes during upload
+    const targetFolderId = currentFolderId;
+    
+    setUploadProgress(prev => ({ ...prev, isUploading: true }));
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadProgress(prev => ({
+        ...prev,
+        currentFileIndex: i,
+        currentFileName: file.name
+      }));
+
+      try {
+        const success = await uploadFile(file, targetFolderId);
+        if (success) {
+          setUploadProgress(prev => ({ ...prev, completed: prev.completed + 1 }));
+        } else {
+          setUploadProgress(prev => ({ 
+            ...prev, 
+            failed: [...prev.failed, file.name] 
+          }));
+        }
+      } catch (error) {
+        setUploadProgress(prev => ({ 
+          ...prev, 
+          failed: [...prev.failed, file.name] 
+        }));
+      }
     }
+
+    setUploadProgress(prev => ({
+      ...prev,
+      isUploading: false,
+      currentFileIndex: -1,
+      currentFileName: ''
+    }));
+
+    // Show completion message
+    const { completed, failed } = uploadProgress;
+    if (failed.length === 0) {
+      showToast(`All ${files.length} files uploaded successfully`, "success");
+    } else if (completed > 0) {
+      showToast(`${completed} files uploaded, ${failed.length} failed`, "warning");
+    } else {
+      showToast("Upload failed for all files", "error");
+    }
+
+    // Reset states
+    setPendingUploadFiles([]);
+    setUploadProgress({
+      currentFileIndex: -1,
+      currentFileName: '',
+      isUploading: false,
+      completed: 0,
+      failed: []
+    });
   };
 
   const handleRenameConfirm = async () => {
@@ -422,7 +501,7 @@ export default function LibraryPage() {
     <div className="flex flex-col md:flex-row h-full gap-0 relative overflow-hidden" onClick={() => setShowAddMenu(false)}>
       <StatusToast toast={toast} onClose={clearToast} />
 
-      {(pendingUploadFile || pendingNewNoteName || pendingDelete || pendingRename || pendingMove) && (
+      {(pendingUploadFiles.length > 0 || pendingNewNoteName || pendingDelete || pendingRename || pendingMove) && (
         <div className="fixed inset-0 z-[9997] bg-black/20 backdrop-blur-[1px]" />
       )}
 
@@ -472,11 +551,21 @@ export default function LibraryPage() {
       />
 
       <UploadModal 
-        file={pendingUploadFile}
+        files={pendingUploadFiles}
+        uploadProgress={uploadProgress}
         currentFolderName={currentFolder?.name}
         onConfirm={() => void handleConfirmUpload()}
-        onCancel={() => setPendingUploadFile(null)}
-        loading={loading}
+        onCancel={() => {
+          setPendingUploadFiles([]);
+          setUploadProgress({
+            currentFileIndex: -1,
+            currentFileName: '',
+            isUploading: false,
+            completed: 0,
+            failed: []
+          });
+        }}
+        loading={loading || uploadProgress.isUploading}
       />
 
       <DeleteConfirmationModal
@@ -489,6 +578,7 @@ export default function LibraryPage() {
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
         onChange={handleSelectUploadFile}
         accept={UPLOAD_FILE_ACCEPT}
@@ -510,20 +600,41 @@ export default function LibraryPage() {
             e.preventDefault(); 
             e.stopPropagation(); 
             setIsDraggingOver(false);
-            const file = e.dataTransfer.files?.[0];
-            if (file) {
-                 if (!isAllowedUploadFileType(file.type, file.name)) {
-                    showToast("File type not supported", "error");
+            const files = Array.from(e.dataTransfer.files || []);
+            if (files.length > 0) {
+              const validFiles: File[] = [];
+              const invalidFiles: string[] = [];
+
+              files.forEach(file => {
+                if (isAllowedUploadFileType(file.type, file.name)) {
+                  validFiles.push(file);
                 } else {
-                    setPendingUploadFile(file);
+                  invalidFiles.push(file.name);
                 }
+              });
+
+              if (invalidFiles.length > 0) {
+                showToast(`Some files are not supported: ${invalidFiles.join(', ')}`, "error");
+              }
+
+              if (validFiles.length > 0) {
+                setPendingUploadFiles(validFiles);
+                setUploadProgress({
+                  currentFileIndex: -1,
+                  currentFileName: '',
+                  isUploading: false,
+                  completed: 0,
+                  failed: []
+                });
+              }
             }
         }}
       >
         {isDraggingOver && (
           <div className="absolute inset-4 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center border-2 border-dashed border-primary rounded-lg pointer-events-none animate-in fade-in zoom-in-95 duration-200">
             <Upload className="h-12 w-12 text-primary mb-4" />
-            <p className="text-xl font-medium text-primary">Drop file here to upload</p>
+            <p className="text-xl font-medium text-primary">Drop files here to upload</p>
+            <p className="text-sm text-muted-foreground mt-2">Multiple files supported</p>
           </div>
         )}
 

@@ -313,11 +313,19 @@ export default function ExamPage() {
         }
 
         const answerText = (structuredAnswers[question.id] || "").trim();
-        return {
+        const structuredBase: QuizQuestion = {
           ...question,
-          subQuestions,
           userAnswerText: answerText || null,
           selfGradedScore: question.selfGradedScore ?? null,
+        };
+
+        if (!subQuestions || subQuestions.length === 0) {
+          return structuredBase;
+        }
+
+        return {
+          ...structuredBase,
+          subQuestions,
         };
       });
 
@@ -378,11 +386,19 @@ export default function ExamPage() {
             userAnswerText: null
         }));
 
-        return {
+        const resetStructured: QuizQuestion = {
           ...question,
           userAnswerText: null,
-          subQuestions: resetSubQuestions || question.subQuestions,
           selfGradedScore: null,
+        };
+
+        if (!resetSubQuestions || resetSubQuestions.length === 0) {
+          return resetStructured;
+        }
+
+        return {
+          ...resetStructured,
+          subQuestions: resetSubQuestions,
         };
       });
 
