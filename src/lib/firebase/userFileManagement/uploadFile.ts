@@ -21,7 +21,8 @@ async function writeMetadataOrThrow(
   file: File,
   result: UploadResult,
   mimeType: string,
-  extractedText: string
+  extractedText: string,
+  folderId?: string | null
 ): Promise<void> {
   if (!result.hash) {
     throw new Error('Upload result missing file hash for metadata write.');
@@ -35,40 +36,41 @@ async function writeMetadataOrThrow(
     downloadURL: result.url,
     mimeType,
     extractedText,
+    folderId,
   });
 }
 
-export async function uploadPdf(userId: string, file: File, extractedText: string): Promise<UploadResult> {
+export async function uploadPdf(userId: string, file: File, extractedText: string, folderId?: string | null): Promise<UploadResult> {
   const result = await uploadPdfToStorage(userId, file);
-  await writeMetadataOrThrow(userId, file, result, 'application/pdf', extractedText);
+  await writeMetadataOrThrow(userId, file, result, 'application/pdf', extractedText, folderId);
   return result;
 }
 
-export async function uploadImage(userId: string, file: File, extractedText: string): Promise<UploadResult> {
+export async function uploadImage(userId: string, file: File, extractedText: string, folderId?: string | null): Promise<UploadResult> {
   const result = await uploadImageToStorage(userId, file);
-  await writeMetadataOrThrow(userId, file, result, file.type, extractedText);
+  await writeMetadataOrThrow(userId, file, result, file.type, extractedText, folderId);
   return result;
 }
 
-export async function uploadDocument(userId: string, file: File, extractedText: string): Promise<UploadResult> {
+export async function uploadDocument(userId: string, file: File, extractedText: string, folderId?: string | null): Promise<UploadResult> {
   const result = await uploadDocumentToStorage(userId, file);
-  await writeMetadataOrThrow(userId, file, result, getDocumentMimeType(file.type, file.name), extractedText);
+  await writeMetadataOrThrow(userId, file, result, getDocumentMimeType(file.type, file.name), extractedText, folderId);
   return result;
 }
 
-export async function uploadFile(userId: string, file: File, extractedText: string): Promise<UploadResult> {
+export async function uploadFile(userId: string, file: File, extractedText: string, folderId?: string | null): Promise<UploadResult> {
   const kind = getUploadFileKind(file.type, file.name);
 
   if (kind === 'pdf') {
-    return uploadPdf(userId, file, extractedText);
+    return uploadPdf(userId, file, extractedText, folderId);
   }
 
   if (kind === 'image') {
-    return uploadImage(userId, file, extractedText);
+    return uploadImage(userId, file, extractedText, folderId);
   }
 
   if (kind === 'document') {
-    return uploadDocument(userId, file, extractedText);
+    return uploadDocument(userId, file, extractedText, folderId);
   }
 
   throw new Error(`Unsupported file type: ${file.type || file.name}. Supported: ${SUPPORTED_UPLOAD_TYPES_LABEL}`);

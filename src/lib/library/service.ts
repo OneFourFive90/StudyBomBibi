@@ -95,9 +95,8 @@ export async function moveFileApi(fileId: string, folderId: string | null): Prom
 export async function uploadFileApi(file: File, folderId: string | null): Promise<void> {
   const formData = new FormData();
   formData.append("file", file);
-  if (folderId) {
-    formData.append("folderId", folderId);
-  }
+  // Always append folderId, even if null (for root folder)
+  formData.append("folderId", folderId || "");
 
   const uploadResponse = await authenticatedFetch("/api/upload-file", {
     method: "POST",

@@ -32,6 +32,9 @@ export async function POST(req: Request) {
     // Parse the incoming form data
     const formData = await req.formData();
     const file = formData.get("file") as File;
+    const rawFolderId = formData.get("folderId") as string | null;
+    // Convert empty string to null for root folder
+    const folderId = rawFolderId && rawFolderId.trim() !== "" ? rawFolderId : null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
             lastModified: Date.now(),
           });
 
-    const uploadResult = await uploadFile(userId, fileForUpload, extractedText);
+    const uploadResult = await uploadFile(userId, fileForUpload, extractedText, folderId);
 
     return NextResponse.json({
       success: true,
