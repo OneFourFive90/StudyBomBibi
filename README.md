@@ -2,6 +2,52 @@
 
 An AI-powered study companion that helps students learn faster and smarter. StudyBomBibi provides intelligent tools for generating quizzes, creating study plans, and offering personalized learning assistance.
 
+## Project Description
+
+**Problem Statement:**
+Students today face "digital fragmentation," spending more time managing scattered PDFs and lecture slides than actively learning. This leads to passive study habits, high academic distress (affecting over 70% of local undergraduates), and rapid information loss—up to 95% within 3 days.
+
+**Our Solution:**
+StudyBomBibi transforms scattered digital files into a structured, active learning journey. Instead of a passive file storage system, it acts as a **Proactive AI Tutor** that generates personalized courses, audio lectures, and interactive quizzes from your existing study materials.
+
+**SDG Alignment:**
+*   **SDG 4 (Quality Education):** We target **Target 4.4** by using AI-driven study plans to equip students with technical mastery and **Target 4.5** by democratizing access to high-quality tutoring through multimodal content (text, audio, video).
+*   **SDG 10 (Reduced Inequalities):** Aligning with **Target 10.2**, our platform provides a 24/7 AI tutor and multi-language support, ensuring high-quality academic guidance is accessible regardless of economic background.
+
+## Implementation Details
+
+Our architecture leverages Google's latest AI technologies to build a robust, scalable educational platform:
+
+*   **Frontend:** Next.js 16, React 19, TypeScript (Type-safe, responsive UI with Tailwind CSS & Framer Motion).
+*   **Backend:** Next.js API Routes (Node.js environment).
+*   **Authentication:** Firebase Auth (Secure Google Sign-In and session persistence).
+*   **Database:** Firebase Firestore (Real-time synchronization of study plans and chat history).
+*   **AI Engine:** **Google Gemini 2.5 Flash** (Selected for its 1M+ token context window to process entire textbooks and generate grounded study plans).
+*   **Audio:** **Google Cloud Text-to-Speech** (Converts AI-generated notes into natural audio lessons).
+
+## Challenges Faced
+
+During our beta testing with 39 real users, we encountered and solved several critical issues:
+
+1.  **The Context Switching Problem:** Users disliked switching tabs to use AI tools.
+    *   *Solution:* We built **In-Text Contextual AI**, allowing users to highlight text directly in a document to "Quick Explain" or "Summarize" without breaking flow.
+2.  **Library Clutter:** Users found it hard to organize AI-generated insights.
+    *   *Solution:* We implemented **Smart Folders** and a direct **"Save to Notes"** feature within chats to create a structured knowledge base.
+3.  **Stability & Auth:** Early versions suffered from chatbot timeouts and session drops.
+    *   *Solution:* We optimized LLM API timeouts and patched the Firebase Google Authentication flow, resulting in zero reported login drops in subsequent tests.
+
+## Future Roadmap
+
+*   **Phase 1 (0-12 Months): Creator-Led Marketplace**
+    *   Launch a marketplace where educators can upload materials.
+    *   Enable students to hyper-personalize purchased courses using Gemini to restructure pacing.
+*   **Phase 2 (1-2 Years): Enterprise Integration**
+    *   Integrate via API with platforms like Moodle, Canvas, and Google Classroom.
+    *   Automate the processing of lecture materials the moment a professor uploads them.
+*   **Phase 3 (2+ Years): Global Accessibility**
+    *   Utilize Gemini's advanced translation to allow uploads in native languages while receiving world-class study plans in English (and vice versa).
+    *   Launch "AI-Verified" peer tutoring economy.
+
 ## Features
 
 - **Dashboard** - Central hub for managing your learning journey
